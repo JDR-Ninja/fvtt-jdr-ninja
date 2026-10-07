@@ -1,0 +1,8 @@
+node_modules/
+dist/
+module.zip
+release/
+
+# Local agent instructions are maintained outside versioned project files.
+/AGENTS.md
+/CLAUDE.md

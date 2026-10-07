@@ -1,0 +1,12 @@
+{
+  "algorithm": "sha256",
+  "files": {
+    "export.mjs": "b2be01879f5c8fdaa913d00ce1cbc2793c6fe3a1444efa2a06938e8a67caf2b4",
+    "schema.mjs": "4f720fd53946fefbb75455dbfdd7c9ca0c311c34ad26d8c7546ddb820eec0bd9",
+    "defenses.mjs": "53ad68abc71115161d7b89b5f44cd465d05f088bd6185f2f883098e4e1eb6ebe",
+    "items.mjs": "b47077fac54eea3066a119fda09eb48f262c8ef1ce19eccd0cbae54293429b2e",
+    "spells.mjs": "80a9d2dcacba4e7b2322330b7c09f72c3d70c212b6897bb0d12036a0ddeae90a",
+    "record-fields.mjs": "e793afe057cdaab286fb9b4897f17ad011eb30acb07bfab140f2b7d329ee520c",
+    "version.mjs": "65fb3d81b952268196f8486d37a4fc0c39afafeaa8c7910967fa673abb790002"
+  }
+}

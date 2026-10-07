@@ -1,0 +1,108 @@
+<div class="standard-form atlas-sync">
+  {{#if guardMessage}}
+    <div class="notice notice-warning">
+      <i class="fa-solid fa-triangle-exclamation"></i> {{guardMessage}}
+    </div>
+  {{else}}
+    <header class="atlas-sync__topbar">
+      <div class="atlas-sync__status">
+        {{#if connected}}
+          <span class="badge badge-neutral">{{localize "JDRNINJA.status.connected"}}</span>
+          <span class="atlas-sync__world">{{worldName}}</span>
+        {{else}}
+
+          <span class="atlas-sync__world">{{localize "JDRNINJA_ATLAS_SYNC.app.disconnected"}}</span>
+        {{/if}}
+        <span class="badge badge-neutral">{{systemLabel}}</span>
+        <button type="button" class="atlas-sync__icon-btn" data-action="refresh" {{#if busy}}disabled{{/if}}
+                title="{{localize "JDRNINJA_ATLAS_SYNC.app.refresh"}}">
+          <i class="fa-solid fa-rotate"></i>
+        </button>
+      </div>
+
+      <div class="atlas-sync__controls">
+        <label class="atlas-sync__field">
+          <span>{{localize "JDRNINJA_ATLAS_SYNC.app.campaign"}}</span>
+          <select data-control="campaign" {{#if busy}}disabled{{/if}} {{#unless connected}}disabled{{/unless}}>
+            <option value="">{{localize "JDRNINJA_ATLAS_SYNC.app.pickCampaign"}}</option>
+            {{#each campaigns}}
+              <option value="{{this.id}}" {{#if this.selected}}selected{{/if}}>{{this.name}} ({{this.count}})</option>
+            {{/each}}
+          </select>
+        </label>
+
+        <label class="atlas-sync__toggle">
+          <input type="checkbox" data-control="claimable" {{#if busy}}disabled{{/if}} {{#if markClaimable}}checked{{/if}} />
+          <span>{{localize "JDRNINJA_ATLAS_SYNC.app.createClaimable"}}</span>
+        </label>
+
+        <button type="button" class="atlas-sync__btn atlas-sync__btn--primary" data-action="syncAll"
+                {{#unless canWrite}}disabled{{/unless}}>
+          <i class="fa-solid fa-cloud-arrow-up"></i> {{localize "JDRNINJA_ATLAS_SYNC.app.syncAll"}}
+        </button>
+      </div>
+    </header>
+
+    {{#if error}}
+      <div class="notice notice-warning">{{error}}</div>
+    {{/if}}
+
+    {{#if loading}}
+      <p class="atlas-sync__muted">{{localize "JDRNINJA_ATLAS_SYNC.app.loading"}}</p>
+    {{else}}
+      {{#if connected}}
+        {{#unless tierAllowed}}
+          <div class="notice notice-info">
+            {{localize "JDRNINJA_ATLAS_SYNC.status.TIER_REQUIRED"}}
+          </div>
+        {{/unless}}
+      {{/if}}
+
+      <ul class="atlas-sync__rows">
+        {{#each rows}}
+          <li class="atlas-sync__row" data-actor-id="{{this.actorId}}">
+            <img class="atlas-sync__avatar" src="{{this.img}}" alt="" />
+            <div class="atlas-sync__row-main">
+              <span class="atlas-sync__row-name">{{this.name}}</span>
+              {{#if this.linked}}
+                <span class="badge badge-neutral">
+                  {{#if this.syncedLabel}}
+                    {{localize "JDRNINJA_ATLAS_SYNC.row.syncedOn"}} {{this.syncedLabel}}
+                  {{else}}
+                    {{localize "JDRNINJA_ATLAS_SYNC.row.linked"}}
+                  {{/if}}
+                </span>
+              {{else}}
+                <span class="atlas-sync__badge atlas-sync__badge--muted">{{localize "JDRNINJA_ATLAS_SYNC.row.unlinked"}}</span>
+              {{/if}}
+              {{#if this.error}}
+                <span class="notice notice-warning">
+                  <i class="fa-solid fa-triangle-exclamation"></i> {{this.error}}
+                </span>
+              {{/if}}
+            </div>
+            <div class="atlas-sync__row-actions">
+              {{#if this.linked}}
+                <button type="button" class="atlas-sync__btn" data-action="sync" {{#unless ../canWrite}}disabled{{/unless}}>
+                  {{localize "JDRNINJA_ATLAS_SYNC.row.sync"}}
+                </button>
+                <button type="button" class="atlas-sync__btn atlas-sync__btn--ghost" data-action="unlink" {{#if ../busy}}disabled{{/if}}>
+                  {{localize "JDRNINJA_ATLAS_SYNC.row.unlink"}}
+                </button>
+              {{else}}
+                <button type="button" class="atlas-sync__btn" data-action="create"
+                        {{#unless ../canWrite}}disabled{{/unless}} {{#unless ../hasCampaign}}disabled{{/unless}}>
+                  {{localize "JDRNINJA_ATLAS_SYNC.row.create"}}
+                </button>
+                <button type="button" class="atlas-sync__btn atlas-sync__btn--ghost" data-action="link" {{#unless ../canWrite}}disabled{{/unless}}
+                        {{#unless ../hasCampaign}}disabled{{/unless}}>
+                  {{localize "JDRNINJA_ATLAS_SYNC.row.link"}}
+                </button>
+              {{/if}}
+            </div>
+          </li>
+        {{/each}}
+      </ul>
+    {{/if}}
+  {{/if}}
+</div>

@@ -1,0 +1,18 @@
+<div class="jn-variables">
+  <p class="hint">{{localize "JDRNINJA.variables.advanced"}}: {{localize "JDRNINJA.variables.macroHint"}}</p>
+  <div class="jn-variable-inline"><select name="macro" aria-label="{{localize 'JDRNINJA.variables.macro'}}">{{#each macros}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select><button type="button" data-action="load">{{localize "JDRNINJA.variables.load"}}</button></div>
+  <p role="status">{{message}}</p>{{#if stale}}<p role="alert">{{localize "JDRNINJA.variables.error.conflict"}}</p>{{/if}}
+  {{#if selected}}
+  {{#each arguments}}<fieldset data-argument="{{index}}"><legend>{{localize "JDRNINJA.variables.argument"}}</legend>
+    <label>{{localize "JDRNINJA.variables.argumentName"}}<input type="text" maxlength="64" data-arg-field="name" value="{{name}}"></label>
+    <label>{{localize "JDRNINJA.variables.typeLabel"}}<select data-arg-field="type">{{#each types}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+    <label><input type="checkbox" data-arg-field="required" {{#if required}}checked{{/if}}> {{localize "JDRNINJA.variables.required"}}</label>
+    <label><input type="checkbox" data-arg-field="hasDefault" {{#if hasDefault}}checked{{/if}}> {{localize "JDRNINJA.variables.hasDefault"}}</label>
+    <label>{{localize "JDRNINJA.variables.default"}}<input type="text" maxlength="2000" data-arg-field="default" value="{{defaultText}}"></label>
+    <p class="hint">{{localize "JDRNINJA.variables.argumentDefaultHint"}}</p>
+    <button type="button" data-action="remove" data-index="{{index}}">{{localize "JDRNINJA.variables.remove"}}</button>
+  </fieldset>{{/each}}
+  <div class="jn-variable-inline"><button type="button" data-action="add">{{localize "JDRNINJA.variables.addArgument"}}</button><button type="button" data-action="save">{{localize "JDRNINJA.variables.save"}}</button><button type="button" data-action="disable">{{localize "JDRNINJA.variables.disableMacro"}}</button></div>
+  <p>{{localize "JDRNINJA.variables.macroAckHint"}}</p><pre><code>{{sample}}</code></pre>
+  {{/if}}
+</div>

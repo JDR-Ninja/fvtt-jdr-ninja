@@ -1,0 +1,26 @@
+{
+  "name": "fvtt-jdr-ninja",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Account connections, Atlas character sync and VTT Overlay for the unified JDR Ninja Foundry VTT module.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node tools/sync-creature-mapper.mjs --check && node tools/build.mjs",
+    "check": "node tools/sync-creature-mapper.mjs --check && node tools/check.mjs",
+    "creatures:sync": "node tools/sync-creature-mapper.mjs",
+    "creatures:check": "node tools/sync-creature-mapper.mjs --check",
+    "creatures:fixtures": "node tools/update-creature-fixtures.mjs",
+    "test": "node --test \"tests/*.test.mjs\" \"scripts/atlas/converters/__tests__/*.test.mjs\"",
+    "test:creatures-native": "node tools/creatures-e2e.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "archiver": "^7.0.1",
+    "esbuild": "^0.25.0",
+    "handlebars": "^4.7.9",
+    "playwright": "1.62.1"
+  }
+}

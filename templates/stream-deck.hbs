@@ -1,0 +1,37 @@
+<div class="standard-form jdr-ninja__connections">
+  <p>{{localize "JDRNINJA.streamDeck.intro"}}</p>
+  <div class="form-group">
+    <label for="jdr-stream-deck-enabled">{{localize "JDRNINJA.streamDeck.enable"}}</label>
+    <input id="jdr-stream-deck-enabled" name="streamDeckEnabled" type="checkbox" {{#if enabled}}checked{{/if}} {{#if busy}}disabled{{/if}}>
+    <p class="hint">{{localize "JDRNINJA.streamDeck.enableHint"}}</p>
+  </div>
+  <p class="jdr-ninja__status" aria-live="polite"><span class="badge badge-neutral" data-stream-deck-status>{{status}}</span></p>
+  <p class="notice notice-warning" role="alert" data-stream-deck-error {{#unless error}}hidden{{/unless}}>{{error}}</p>
+  <fieldset>
+    <legend>{{localize "JDRNINJA.streamDeck.connection"}}</legend>
+    <div class="form-group">
+      <label for="jdr-stream-deck-url">{{localize "JDRNINJA.streamDeck.url"}}</label>
+      <input id="jdr-stream-deck-url" name="streamDeckUrl" type="url" value="{{url}}" maxlength="512" {{#if busy}}disabled{{/if}}>
+      <p class="hint">{{localize "JDRNINJA.streamDeck.urlHint"}}</p>
+    </div>
+    <div class="form-group">
+      <label for="jdr-stream-deck-key">{{localize "JDRNINJA.streamDeck.key"}}</label>
+      <input id="jdr-stream-deck-key" name="streamDeckKey" type="password" autocomplete="off" spellcheck="false" maxlength="128" {{#if busy}}disabled{{/if}}>
+      <p class="hint">{{localize "JDRNINJA.streamDeck.keyHint"}}</p>
+    </div>
+    {{#if generated}}
+      <p class="hint">{{localize "JDRNINJA.streamDeck.generatedHint"}}</p>
+      <input type="text" value="{{generated}}" readonly aria-label="{{localize 'JDRNINJA.streamDeck.key'}}" autocomplete="off" spellcheck="false">
+    {{/if}}
+    <div class="jdr-ninja__actions">
+      <button type="button" data-action="generate" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.streamDeck.generate"}}</button>
+      <button type="button" data-action="save" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.streamDeck.save"}}</button>
+    </div>
+  </fieldset>
+  <div class="jdr-ninja__actions">
+    <button type="button" data-action="reconnect" {{#unless enabled}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.streamDeck.reconnect"}}</button>
+    <button type="button" data-action="disconnect" {{#unless configured}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.streamDeck.disconnect"}}</button>
+  </div>
+  <p class="hint">{{localize "JDRNINJA.streamDeck.permissions"}}</p>
+  <p class="hint">{{localize "JDRNINJA.streamDeck.companion"}}</p>
+</div>

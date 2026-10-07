@@ -1,0 +1,148 @@
+<div class="standard-form jdr-ninja__connections">
+  <p>{{localize "JDRNINJA.panel.intro"}}</p>
+  <fieldset>
+    <legend>{{localize "JDRNINJA.streamDeck.title"}}</legend>
+    <div class="form-group">
+      <label for="jdr-ninja-stream-deck-enabled">{{localize "JDRNINJA.streamDeck.enable"}}</label>
+      <input id="jdr-ninja-stream-deck-enabled" name="streamDeckEnabled" type="checkbox" {{#if streamDeck.enabled}}checked{{/if}} {{#if busy}}disabled{{/if}}>
+      <p class="hint">{{localize "JDRNINJA.streamDeck.enableHint"}}</p>
+    </div>
+    <button type="button" data-action="openStreamDeck" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.streamDeck.open"}}</button>
+  </fieldset>
+  <fieldset>
+    <legend>{{localize "JDRNINJA.account.heading"}}</legend>
+    <p class="jdr-ninja__status" aria-live="polite">
+      <span class="badge badge-neutral">{{account.status}}</span>
+      {{#if account.label}}<strong>{{account.label}}</strong>{{/if}}
+    </p>
+    {{#if account.showSubscriptionLink}}<p><a href="{{subscriptionsUrl}}" target="_blank" rel="noopener noreferrer" data-jdr-subscriptions="account">{{localize "JDRNINJA.creatures.subscription"}}</a></p>{{/if}}
+    <p>{{localize "JDRNINJA.account.hint"}}</p>
+    <div class="form-group">
+      <label for="jdr-ninja-relay-enabled">{{localize "JDRNINJA.overlay.enable"}}</label>
+      <input id="jdr-ninja-relay-enabled" name="overlayEnabled" type="checkbox" {{#if overlay.enabled}}checked{{/if}} {{#if busy}}disabled{{/if}}>
+      <p class="hint">{{localize "JDRNINJA.overlay.enableHint"}}</p>
+    </div>
+    {{#if overlay.notice}}<p class="notice notice-info">{{overlay.notice}}</p>{{/if}}
+    <button type="button" data-action="openOverlay" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.overlay.open"}}</button>
+    {{#if account.error}}<p role="alert" class="notice notice-warning">{{account.error}}</p>{{/if}}
+    {{#if account.limited}}<p class="notice notice-info">{{localize "JDRNINJA.account.limited"}}</p>{{/if}}
+    <div class="form-group">
+      <label for="jdr-ninja-device-name">{{localize "JDRNINJA.account.deviceName"}}</label>
+      <input id="jdr-ninja-device-name" name="deviceName" type="text" value="{{deviceName}}" maxlength="100" {{#if busy}}disabled{{/if}}>
+    </div>
+    <div class="jdr-ninja__actions">
+      <button type="button" data-action="pair" {{#if busy}}disabled{{/if}}>
+        <i class="fa-solid fa-link" aria-hidden="true"></i>
+        {{#if account.configured}}{{localize "JDRNINJA.account.change"}}{{else}}{{localize "JDRNINJA.account.connect"}}{{/if}}
+      </button>
+      {{#if account.configured}}
+        <button type="button" data-action="checkAccount" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.button.check"}}</button>
+        <button type="button" data-action="disconnectAccount" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.account.disconnect"}}</button>
+      {{/if}}
+    </div>
+    {{#if challenge}}
+      <div class="notice notice-info" role="status">
+        <p>{{localize "JDRNINJA.pairing.instruction"}}</p>
+        <p><strong class="jdr-ninja__code">{{challenge.userCode}}</strong></p>
+        <a href="{{challenge.verificationUrl}}" target="_blank" rel="noopener noreferrer">{{localize "JDRNINJA.pairing.open"}}</a>
+      </div>
+    {{/if}}
+    <details>
+      <summary>{{localize "JDRNINJA.account.manual"}}</summary>
+      <p>{{localize "JDRNINJA.account.manualHint"}}</p>
+      <div class="form-group">
+        <label for="jdr-ninja-account-token">{{localize "JDRNINJA.field.token"}}</label>
+        <input id="jdr-ninja-account-token" name="accountToken" type="password" autocomplete="off" spellcheck="false" maxlength="4096" {{#if busy}}disabled{{/if}}>
+      </div>
+      <button type="button" data-action="saveAccount" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.button.save"}}</button>
+    </details>
+    <details>
+      <summary>{{localize "JDRNINJA.field.server"}}</summary>
+      <div class="form-group">
+        <label for="jdr-ninja-account-origin">{{localize "JDRNINJA.field.url"}}</label>
+        <input id="jdr-ninja-account-origin" name="accountOrigin" type="url" value="{{account.origin}}" {{#if busy}}disabled{{/if}}>
+      </div>
+      <p>{{localize "JDRNINJA.field.serverHint"}}</p>
+    </details>
+    <button type="button" data-action="manageAccount" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.account.manage"}}</button>
+    <p class="hint">{{localize "JDRNINJA.account.disconnectHint"}}</p>
+  </fieldset>
+  {{#if isGM}}
+    <fieldset>
+      <legend><i class="fa-solid fa-gem" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.heading"}} ({{localize "JDRNINJA.creatures.premium"}})</legend>
+      <div class="jn-creature-compatibility" role="status" data-compatibility="{{creatures.compatibility.code}}">
+        <span class="badge"><i class="fa-solid {{creatures.compatibility.icon}}" aria-hidden="true"></i> {{creatures.compatibility.label}}</span>
+        <p>{{creatures.compatibility.current}}</p>
+        <p class="hint">{{localize "JDRNINJA.creatures.error.incompatibleSystem"}}</p>
+      </div>
+      <div class="form-group">
+        <label for="jdr-ninja-creatures-enabled">{{localize "JDRNINJA.creatures.enable"}}</label>
+        <input id="jdr-ninja-creatures-enabled" name="creaturesEnabled" type="checkbox" {{#if creatures.enabled}}checked{{/if}} {{#if busy}}disabled{{/if}}>
+        <p class="hint">{{localize "JDRNINJA.creatures.enableHint"}}</p>
+      </div>
+      <p role="status">{{creatures.status}}</p>
+      {{#if creatures.showSubscriptionLink}}<p><a href="{{subscriptionsUrl}}" target="_blank" rel="noopener noreferrer" data-jdr-subscriptions="creatures">{{localize "JDRNINJA.creatures.subscription"}}</a></p>{{/if}}
+      {{#if creatures.error}}<p role="alert">{{creatures.error}}</p>{{/if}}
+      <p class="hint">{{localize "JDRNINJA.creatures.permissionHint"}}</p>
+      <div class="jdr-ninja__actions">
+        <button type="button" data-action="pairCreatures" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.authorize"}}</button>
+        <button type="button" data-action="checkCreatures" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.check"}}</button>
+        <button type="button" data-action="openMonster" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.monsterPremium"}}</button>
+        <button type="button" data-action="openNpc" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.npcPremium"}}</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>{{localize "JDRNINJA.atlas.heading"}}</legend>
+      <div class="form-group">
+        <label for="jdr-ninja-atlas-enabled">{{localize "JDRNINJA.atlas.enable"}}</label>
+        <input id="jdr-ninja-atlas-enabled" name="atlasEnabled" type="checkbox" {{#if atlas.enabled}}checked{{/if}} {{#if busy}}disabled{{/if}}>
+        <p class="hint">{{localize "JDRNINJA.atlas.enableHint"}}</p>
+      </div>
+      {{#if atlas.integrationNotice}}<p class="notice notice-info">{{atlas.integrationNotice}}</p>{{/if}}
+      <button type="button" data-action="openAtlas" {{#unless atlas.canSync}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+        {{localize "JDRNINJA.atlas.openSync"}}
+      </button>
+      <p class="jdr-ninja__status" aria-live="polite">
+        <span class="badge badge-neutral">{{atlas.status}}</span>
+        {{#if atlas.label}}<strong>{{atlas.label}}</strong>{{/if}}
+      </p>
+      <p>{{localize "JDRNINJA.atlas.hint"}}</p>
+      {{#if atlas.error}}<p role="alert" class="notice notice-warning">{{atlas.error}}</p>{{/if}}
+      {{#if atlas.limited}}<p class="notice notice-info">{{localize "JDRNINJA.atlas.limited"}}</p>{{/if}}
+      <div class="form-group">
+        <label for="jdr-ninja-atlas-token">{{localize "JDRNINJA.field.token"}}</label>
+        <input id="jdr-ninja-atlas-token" name="atlasToken" type="password" autocomplete="off" spellcheck="false" maxlength="4096" {{#if busy}}disabled{{/if}}>
+      </div>
+      <div class="jdr-ninja__actions">
+        <button type="button" data-action="saveAtlas" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.button.save"}}</button>
+        {{#if atlas.configured}}
+          <button type="button" data-action="checkAtlas" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.button.check"}}</button>
+          <button type="button" data-action="disconnectAtlas" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.atlas.disconnect"}}</button>
+        {{/if}}
+      </div>
+      <details>
+        <summary>{{localize "JDRNINJA.field.server"}}</summary>
+        <div class="form-group">
+          <label for="jdr-ninja-atlas-origin">{{localize "JDRNINJA.field.url"}}</label>
+          <input id="jdr-ninja-atlas-origin" name="atlasOrigin" type="url" value="{{atlas.origin}}" {{#if busy}}disabled{{/if}}>
+        </div>
+        <p>{{localize "JDRNINJA.field.serverHint"}}</p>
+      </details>
+      <button type="button" data-action="manageAtlas" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.atlas.manage"}}</button>
+      <p class="hint">{{localize "JDRNINJA.atlas.disconnectHint"}}</p>
+    </fieldset>
+  {{/if}}
+  <fieldset>
+    <legend>{{localize "JDRNINJA.variables.advanced"}}</legend>
+    <p class="hint">{{localize "JDRNINJA.variables.menu.hint"}}</p>
+    <div class="jdr-ninja__actions"><button type="button" data-action="openVariables">{{localize "JDRNINJA.variables.menu.variables"}}</button>
+      <button type="button" data-action="openMacroArguments">{{localize "JDRNINJA.variables.menu.macroArguments"}}</button></div>
+  </fieldset>
+  {{#if busy}}
+    <div class="jdr-ninja__actions" role="status">
+      <span>{{localize "JDRNINJA.pairing.waiting"}}</span>
+      <button type="button" data-action="cancel">{{localize "JDRNINJA.button.cancel"}}</button>
+    </div>
+  {{/if}}
+  <p class="hint">{{localize "JDRNINJA.panel.draft"}}</p>
+</div>

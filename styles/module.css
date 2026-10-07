@@ -1,0 +1,61 @@
+/* Foundry owns colours and control styling in both themes. Only layout is scoped here. */
+.jdr-ninja .jdr-ninja__connections { gap: 1rem; }
+.jdr-ninja .jdr-ninja__connections p { margin-block: 0.5rem; }
+.jdr-ninja .jdr-ninja__actions,
+.jdr-ninja .jdr-ninja__status { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.jdr-ninja .jdr-ninja__actions button { flex: 1 1 auto; }
+.jdr-ninja .jdr-ninja__connections fieldset { min-width: 0; }
+.jdr-ninja .jdr-ninja__connections details { margin-block: 0.75rem; }
+.jdr-ninja .jdr-ninja__connections summary { cursor: pointer; }
+.jdr-ninja .jdr-ninja__connections .badge { border: 1px solid; border-radius: 0.35rem; padding: 0.2rem 0.5rem; }
+.jdr-ninja .jdr-ninja__connections .notice { border-inline-start: 3px solid; padding-inline: 0.75rem; }
+.jdr-ninja .jdr-ninja__code { font-size: 1.3em; letter-spacing: 0.1em; }
+
+/* Creature windows inherit Foundry colours; selected descriptive HTML has no imported styles. */
+.jdr-ninja .jn-creatures { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.jdr-ninja .jn-creatures fieldset { min-width: 0; }
+.jdr-ninja .jn-creature-preview { overflow-wrap: anywhere; }
+.jdr-ninja .jn-creature-preview table { width: 100%; }
+.jdr-ninja .jn-creatures [aria-invalid="true"] { outline: 2px solid currentColor; }
+.jdr-ninja .jn-creatures details { margin-block: 0.5rem; }
+.jdr-ninja .jn-creature-compatibility .badge { display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid; border-radius: 0.35rem; padding: 0.2rem 0.5rem; }
+
+/* Advanced controls retain Foundry's native theme and focus indicators. */
+.jdr-ninja .jn-variables { display: flex; flex-direction: column; gap: 0.65rem; min-height: 0; overflow: auto; }
+.jdr-ninja .jn-variable-nav, .jdr-ninja .jn-variable-inline, .jdr-ninja .jn-variable-controller { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.jdr-ninja .jn-variable-nav button[aria-pressed="true"], .jdr-ninja .jn-variable-row[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: -2px; }
+.jdr-ninja .jn-variable-columns { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(18rem, 2fr); gap: 1rem; min-height: 0; }
+.jdr-ninja .jn-variable-editor, .jdr-ninja .jn-variable-records { min-width: 0; }
+.jdr-ninja .jn-variable-row { display: flex; flex-direction: column; align-items: flex-start; height: auto; width: 100%; text-align: start; white-space: normal; gap: 0.25rem; margin-block: 0.4rem; padding: 0.5rem; overflow-wrap: anywhere; }
+.jdr-ninja .jn-variables label { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin-block: 0.5rem; }
+.jdr-ninja .jn-variables label input:not([type="checkbox"]), .jdr-ninja .jn-variables label select, .jdr-ninja .jn-variables textarea { flex: 1 1 12rem; width: 100%; min-width: 0; }
+.jdr-ninja .jn-variables fieldset { min-width: 0; margin-block: 0.5rem; }
+.jdr-ninja .jn-variables pre { overflow: auto; }
+.jdr-ninja .jn-variable-inline > select { flex: 1; min-width: 0; }
+.jdr-ninja .jn-variables [hidden] { display: none; }
+@media (max-width: 680px) { .jdr-ninja .jn-variable-columns { grid-template-columns: 1fr; } }
+
+/* Atlas keeps native Foundry control colours, with no separate palette. */
+.jdr-ninja-atlas .atlas-sync { display: flex; flex-direction: column; gap: 0.75rem; height: 100%; min-height: 0; }
+.jdr-ninja-atlas .atlas-sync__topbar { display: flex; flex-direction: column; gap: 0.75rem; }
+.jdr-ninja-atlas .atlas-sync__status,
+.jdr-ninja-atlas .atlas-sync__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.jdr-ninja-atlas .atlas-sync__field { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; }
+.jdr-ninja-atlas .atlas-sync__toggle { display: flex; align-items: center; gap: 0.35rem; }
+.jdr-ninja-atlas .atlas-sync__rows { list-style: none; padding: 0; margin: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
+.jdr-ninja-atlas .atlas-sync__row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.5rem; border: 1px solid; border-radius: 0.35rem; }
+.jdr-ninja-atlas .atlas-sync__avatar { width: 2rem; height: 2rem; object-fit: cover; flex: 0 0 auto; }
+.jdr-ninja-atlas .atlas-sync__row-main { display: flex; flex-direction: column; flex: 1; min-width: 6rem; overflow-wrap: anywhere; }
+.jdr-ninja-atlas .atlas-sync__row-actions { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.jdr-ninja-atlas .badge { border: 1px solid; border-radius: 0.35rem; padding: 0.2rem 0.5rem; }
+.jdr-ninja-atlas .notice { border-inline-start: 3px solid; padding-inline: 0.75rem; }
+button.jdr-ninja-atlas-open { width: 100%; margin-block-start: 0.25rem; }
+
+.jdr-ninja-overlay .jdr-ninja__overlay { display: flex; flex-direction: column; gap: 0.75rem; }
+.jdr-ninja-overlay fieldset { min-width: 0; }
+.jdr-ninja-overlay .notice { border-inline-start: 3px solid; padding-inline: 0.75rem; }
+.jdr-ninja-overlay .jdr-ninja__diagnostics > div { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-block: 0.5rem; }
+.jdr-ninja-overlay dt { font-weight: bold; flex: 1 1 8rem; }
+.jdr-ninja-overlay dd { margin: 0; flex: 3 1 14rem; overflow-wrap: anywhere; }
+/* Independent of DSN's hide class: reveal at the later deadline, without adding the delays. */
+.jdr-ninja-overlay-hold { display: none !important; }

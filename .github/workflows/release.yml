@@ -1,0 +1,61 @@
+name: Publish Foundry release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate sources
+        run: npm run check
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build minified module
+        run: npm run build -- --tag "$RELEASE_TAG"
+
+      - name: Stage Foundry release assets
+        run: |
+          mkdir -p release
+          cp module.zip release/jdr-ninja.zip
+          cp dist/module.json release/module.json
+          cd release
+          sha256sum jdr-ninja.zip > jdr-ninja.zip.sha256
+
+      - name: Attach package to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            release/jdr-ninja.zip \
+            release/jdr-ninja.zip.sha256 \
+            release/module.json \
+            --clobber

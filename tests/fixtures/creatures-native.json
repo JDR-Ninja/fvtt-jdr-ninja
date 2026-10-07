@@ -1,0 +1,879 @@
+{
+  "mapperVersion": "fd285500012ef4cf395a41384660bbdab12057b7efdcc12daca2c7ecdd859beb",
+  "actors": {
+    "monster": {
+      "name": "Fixture monster",
+      "type": "npc",
+      "img": "icons/svg/mystery-man.svg",
+      "system": {
+        "abilities": {
+          "str": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          },
+          "dex": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          },
+          "con": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          },
+          "int": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          },
+          "wis": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          },
+          "cha": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          }
+        },
+        "skills": {},
+        "attributes": {
+          "ac": {
+            "calc": "flat",
+            "flat": 14,
+            "formula": ""
+          },
+          "hp": {
+            "value": 27,
+            "max": 27,
+            "temp": 0,
+            "tempmax": 0,
+            "formula": "5d8 + 5"
+          },
+          "movement": {
+            "units": "ft",
+            "walk": 30
+          },
+          "senses": {
+            "units": "ft",
+            "ranges": {}
+          },
+          "init": {
+            "ability": "dex",
+            "bonus": "2"
+          },
+          "spellcasting": ""
+        },
+        "details": {
+          "cr": 0.25,
+          "alignment": "",
+          "type": {
+            "value": "monstrosity",
+            "subtype": "",
+            "custom": ""
+          },
+          "biography": {
+            "value": "<h2>Fixture</h2><p>Private secret.</p>",
+            "public": ""
+          }
+        },
+        "traits": {
+          "size": "med",
+          "languages": {
+            "value": [],
+            "custom": ""
+          },
+          "dr": {
+            "value": [],
+            "custom": "",
+            "bypasses": []
+          },
+          "di": {
+            "value": [],
+            "custom": "",
+            "bypasses": []
+          },
+          "dv": {
+            "value": [],
+            "custom": "",
+            "bypasses": []
+          },
+          "ci": {
+            "value": [],
+            "custom": ""
+          }
+        },
+        "resources": {
+          "legact": {
+            "max": 0,
+            "spent": 0
+          },
+          "legres": {
+            "max": 0,
+            "spent": 0
+          },
+          "lair": {
+            "value": false,
+            "initiative": 20,
+            "inside": false
+          }
+        },
+        "source": {
+          "custom": "JDR Ninja",
+          "rules": "2024"
+        }
+      },
+      "items": [
+        {
+          "_id": "jn00000000000001",
+          "name": "blade",
+          "type": "feat",
+          "img": "icons/svg/book.svg",
+          "effects": [],
+          "system": {
+            "description": {
+              "value": "<p>blade</p>",
+              "chat": ""
+            },
+            "source": {
+              "custom": "JDR Ninja",
+              "rules": "2024"
+            },
+            "uses": {
+              "max": "",
+              "spent": 0,
+              "recovery": []
+            },
+            "activities": {
+              "jn00000000000002": {
+                "_id": "jn00000000000002",
+                "type": "attack",
+                "activation": {
+                  "type": "action",
+                  "value": 1,
+                  "condition": "",
+                  "override": true
+                },
+                "consumption": {
+                  "spellSlot": false,
+                  "targets": [],
+                  "scaling": {
+                    "allowed": false,
+                    "max": ""
+                  }
+                },
+                "duration": {
+                  "units": "inst",
+                  "concentration": false,
+                  "override": true
+                },
+                "range": {
+                  "value": "5",
+                  "units": "ft",
+                  "special": "",
+                  "override": true
+                },
+                "target": {
+                  "override": true,
+                  "prompt": true,
+                  "affects": {
+                    "type": "",
+                    "count": "",
+                    "choice": false,
+                    "special": ""
+                  },
+                  "template": {
+                    "type": "",
+                    "size": "",
+                    "units": "ft",
+                    "contiguous": false
+                  }
+                },
+                "uses": {
+                  "max": "",
+                  "spent": 0,
+                  "recovery": []
+                },
+                "effects": [],
+                "attack": {
+                  "ability": "none",
+                  "bonus": "3",
+                  "flat": true,
+                  "critical": {
+                    "threshold": 20
+                  },
+                  "type": {
+                    "value": "melee",
+                    "classification": "weapon"
+                  }
+                },
+                "damage": {
+                  "includeBase": false,
+                  "critical": {
+                    "bonus": ""
+                  },
+                  "parts": [
+                    {
+                      "number": 1,
+                      "denomination": 6,
+                      "bonus": "1",
+                      "types": [
+                        "slashing"
+                      ],
+                      "custom": {
+                        "enabled": false,
+                        "formula": ""
+                      },
+                      "scaling": {
+                        "mode": "",
+                        "number": 1,
+                        "formula": ""
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "_id": "jn00000000000003",
+          "name": "venom1",
+          "type": "feat",
+          "img": "icons/svg/book.svg",
+          "effects": [],
+          "system": {
+            "description": {
+              "value": "<p>venom1</p>",
+              "chat": ""
+            },
+            "source": {
+              "custom": "JDR Ninja",
+              "rules": "2024"
+            },
+            "uses": {
+              "max": "2",
+              "spent": 0,
+              "recovery": [
+                {
+                  "period": "day",
+                  "type": "recoverAll",
+                  "formula": ""
+                }
+              ]
+            },
+            "activities": {
+              "jn00000000000004": {
+                "_id": "jn00000000000004",
+                "type": "utility",
+                "activation": {
+                  "type": "bonus",
+                  "value": 1,
+                  "condition": "",
+                  "override": true
+                },
+                "consumption": {
+                  "spellSlot": false,
+                  "targets": [
+                    {
+                      "type": "itemUses",
+                      "target": "",
+                      "value": "1",
+                      "scaling": {
+                        "mode": "",
+                        "formula": ""
+                      }
+                    }
+                  ],
+                  "scaling": {
+                    "allowed": false,
+                    "max": ""
+                  }
+                },
+                "duration": {
+                  "units": "spec",
+                  "concentration": false,
+                  "override": true
+                },
+                "range": {
+                  "value": "",
+                  "units": "self",
+                  "special": "",
+                  "override": true
+                },
+                "target": {
+                  "override": true,
+                  "prompt": true,
+                  "affects": {
+                    "type": "",
+                    "count": "",
+                    "choice": false,
+                    "special": ""
+                  },
+                  "template": {
+                    "type": "",
+                    "size": "",
+                    "units": "ft",
+                    "contiguous": false
+                  }
+                },
+                "uses": {
+                  "max": "",
+                  "spent": 0,
+                  "recovery": []
+                },
+                "effects": []
+              }
+            }
+          }
+        },
+        {
+          "_id": "jn00000000000005",
+          "name": "venom2",
+          "type": "feat",
+          "img": "icons/svg/book.svg",
+          "effects": [],
+          "system": {
+            "description": {
+              "value": "<p>venom2</p>",
+              "chat": ""
+            },
+            "source": {
+              "custom": "JDR Ninja",
+              "rules": "2024"
+            },
+            "uses": {
+              "max": "",
+              "spent": 0,
+              "recovery": []
+            },
+            "activities": {
+              "jn00000000000006": {
+                "_id": "jn00000000000006",
+                "type": "utility",
+                "activation": {
+                  "type": "reaction",
+                  "value": 1,
+                  "condition": "",
+                  "override": true
+                },
+                "consumption": {
+                  "spellSlot": false,
+                  "targets": [
+                    {
+                      "type": "itemUses",
+                      "target": "jn00000000000003",
+                      "value": "1",
+                      "scaling": {
+                        "mode": "",
+                        "formula": ""
+                      }
+                    }
+                  ],
+                  "scaling": {
+                    "allowed": false,
+                    "max": ""
+                  }
+                },
+                "duration": {
+                  "units": "spec",
+                  "concentration": false,
+                  "override": true
+                },
+                "range": {
+                  "value": "",
+                  "units": "self",
+                  "special": "",
+                  "override": true
+                },
+                "target": {
+                  "override": true,
+                  "prompt": true,
+                  "affects": {
+                    "type": "",
+                    "count": "",
+                    "choice": false,
+                    "special": ""
+                  },
+                  "template": {
+                    "type": "",
+                    "size": "",
+                    "units": "ft",
+                    "contiguous": false
+                  }
+                },
+                "uses": {
+                  "max": "",
+                  "spent": 0,
+                  "recovery": []
+                },
+                "effects": []
+              }
+            }
+          }
+        }
+      ],
+      "effects": [],
+      "ownership": {
+        "default": 0
+      }
+    },
+    "npc": {
+      "name": "Fixture NPC",
+      "type": "npc",
+      "img": "icons/svg/mystery-man.svg",
+      "system": {
+        "abilities": {
+          "str": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          },
+          "dex": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          },
+          "con": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          },
+          "int": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          },
+          "wis": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          },
+          "cha": {
+            "value": 12,
+            "proficient": 0,
+            "bonuses": {
+              "check": "",
+              "save": ""
+            }
+          }
+        },
+        "skills": {},
+        "attributes": {
+          "ac": {
+            "calc": "flat",
+            "flat": 14,
+            "formula": ""
+          },
+          "hp": {
+            "value": 27,
+            "max": 27,
+            "temp": 0,
+            "tempmax": 0,
+            "formula": "5d8 + 5"
+          },
+          "movement": {
+            "units": "ft",
+            "walk": 30
+          },
+          "senses": {
+            "units": "ft",
+            "ranges": {}
+          },
+          "init": {
+            "ability": "dex",
+            "bonus": "2"
+          },
+          "spellcasting": ""
+        },
+        "details": {
+          "cr": 0.25,
+          "alignment": "",
+          "type": {
+            "value": "humanoid",
+            "subtype": "",
+            "custom": ""
+          },
+          "biography": {
+            "value": "<h2>Fixture</h2><p>Private secret.</p>",
+            "public": ""
+          }
+        },
+        "traits": {
+          "size": "med",
+          "languages": {
+            "value": [],
+            "custom": ""
+          },
+          "dr": {
+            "value": [],
+            "custom": "",
+            "bypasses": []
+          },
+          "di": {
+            "value": [],
+            "custom": "",
+            "bypasses": []
+          },
+          "dv": {
+            "value": [],
+            "custom": "",
+            "bypasses": []
+          },
+          "ci": {
+            "value": [],
+            "custom": ""
+          }
+        },
+        "resources": {
+          "legact": {
+            "max": 0,
+            "spent": 0
+          },
+          "legres": {
+            "max": 0,
+            "spent": 0
+          },
+          "lair": {
+            "value": false,
+            "initiative": 20,
+            "inside": false
+          }
+        },
+        "source": {
+          "custom": "JDR Ninja",
+          "rules": "2024"
+        }
+      },
+      "items": [
+        {
+          "_id": "jn00000000000001",
+          "name": "blade",
+          "type": "feat",
+          "img": "icons/svg/book.svg",
+          "effects": [],
+          "system": {
+            "description": {
+              "value": "<p>blade</p>",
+              "chat": ""
+            },
+            "source": {
+              "custom": "JDR Ninja",
+              "rules": "2024"
+            },
+            "uses": {
+              "max": "",
+              "spent": 0,
+              "recovery": []
+            },
+            "activities": {
+              "jn00000000000002": {
+                "_id": "jn00000000000002",
+                "type": "attack",
+                "activation": {
+                  "type": "action",
+                  "value": 1,
+                  "condition": "",
+                  "override": true
+                },
+                "consumption": {
+                  "spellSlot": false,
+                  "targets": [],
+                  "scaling": {
+                    "allowed": false,
+                    "max": ""
+                  }
+                },
+                "duration": {
+                  "units": "inst",
+                  "concentration": false,
+                  "override": true
+                },
+                "range": {
+                  "value": "5",
+                  "units": "ft",
+                  "special": "",
+                  "override": true
+                },
+                "target": {
+                  "override": true,
+                  "prompt": true,
+                  "affects": {
+                    "type": "",
+                    "count": "",
+                    "choice": false,
+                    "special": ""
+                  },
+                  "template": {
+                    "type": "",
+                    "size": "",
+                    "units": "ft",
+                    "contiguous": false
+                  }
+                },
+                "uses": {
+                  "max": "",
+                  "spent": 0,
+                  "recovery": []
+                },
+                "effects": [],
+                "attack": {
+                  "ability": "none",
+                  "bonus": "3",
+                  "flat": true,
+                  "critical": {
+                    "threshold": 20
+                  },
+                  "type": {
+                    "value": "melee",
+                    "classification": "weapon"
+                  }
+                },
+                "damage": {
+                  "includeBase": false,
+                  "critical": {
+                    "bonus": ""
+                  },
+                  "parts": [
+                    {
+                      "number": 1,
+                      "denomination": 6,
+                      "bonus": "1",
+                      "types": [
+                        "slashing"
+                      ],
+                      "custom": {
+                        "enabled": false,
+                        "formula": ""
+                      },
+                      "scaling": {
+                        "mode": "",
+                        "number": 1,
+                        "formula": ""
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "_id": "jn00000000000003",
+          "name": "venom1",
+          "type": "feat",
+          "img": "icons/svg/book.svg",
+          "effects": [],
+          "system": {
+            "description": {
+              "value": "<p>venom1</p>",
+              "chat": ""
+            },
+            "source": {
+              "custom": "JDR Ninja",
+              "rules": "2024"
+            },
+            "uses": {
+              "max": "2",
+              "spent": 0,
+              "recovery": [
+                {
+                  "period": "day",
+                  "type": "recoverAll",
+                  "formula": ""
+                }
+              ]
+            },
+            "activities": {
+              "jn00000000000004": {
+                "_id": "jn00000000000004",
+                "type": "utility",
+                "activation": {
+                  "type": "bonus",
+                  "value": 1,
+                  "condition": "",
+                  "override": true
+                },
+                "consumption": {
+                  "spellSlot": false,
+                  "targets": [
+                    {
+                      "type": "itemUses",
+                      "target": "",
+                      "value": "1",
+                      "scaling": {
+                        "mode": "",
+                        "formula": ""
+                      }
+                    }
+                  ],
+                  "scaling": {
+                    "allowed": false,
+                    "max": ""
+                  }
+                },
+                "duration": {
+                  "units": "spec",
+                  "concentration": false,
+                  "override": true
+                },
+                "range": {
+                  "value": "",
+                  "units": "self",
+                  "special": "",
+                  "override": true
+                },
+                "target": {
+                  "override": true,
+                  "prompt": true,
+                  "affects": {
+                    "type": "",
+                    "count": "",
+                    "choice": false,
+                    "special": ""
+                  },
+                  "template": {
+                    "type": "",
+                    "size": "",
+                    "units": "ft",
+                    "contiguous": false
+                  }
+                },
+                "uses": {
+                  "max": "",
+                  "spent": 0,
+                  "recovery": []
+                },
+                "effects": []
+              }
+            }
+          }
+        },
+        {
+          "_id": "jn00000000000005",
+          "name": "venom2",
+          "type": "feat",
+          "img": "icons/svg/book.svg",
+          "effects": [],
+          "system": {
+            "description": {
+              "value": "<p>venom2</p>",
+              "chat": ""
+            },
+            "source": {
+              "custom": "JDR Ninja",
+              "rules": "2024"
+            },
+            "uses": {
+              "max": "",
+              "spent": 0,
+              "recovery": []
+            },
+            "activities": {
+              "jn00000000000006": {
+                "_id": "jn00000000000006",
+                "type": "utility",
+                "activation": {
+                  "type": "reaction",
+                  "value": 1,
+                  "condition": "",
+                  "override": true
+                },
+                "consumption": {
+                  "spellSlot": false,
+                  "targets": [
+                    {
+                      "type": "itemUses",
+                      "target": "jn00000000000003",
+                      "value": "1",
+                      "scaling": {
+                        "mode": "",
+                        "formula": ""
+                      }
+                    }
+                  ],
+                  "scaling": {
+                    "allowed": false,
+                    "max": ""
+                  }
+                },
+                "duration": {
+                  "units": "spec",
+                  "concentration": false,
+                  "override": true
+                },
+                "range": {
+                  "value": "",
+                  "units": "self",
+                  "special": "",
+                  "override": true
+                },
+                "target": {
+                  "override": true,
+                  "prompt": true,
+                  "affects": {
+                    "type": "",
+                    "count": "",
+                    "choice": false,
+                    "special": ""
+                  },
+                  "template": {
+                    "type": "",
+                    "size": "",
+                    "units": "ft",
+                    "contiguous": false
+                  }
+                },
+                "uses": {
+                  "max": "",
+                  "spent": 0,
+                  "recovery": []
+                },
+                "effects": []
+              }
+            }
+          }
+        }
+      ],
+      "effects": [],
+      "ownership": {
+        "default": 0
+      }
+    }
+  }
+}

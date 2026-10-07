@@ -1,0 +1,71 @@
+<div class="jn-variables">
+  <p class="hint">{{localize "JDRNINJA.variables.advanced"}}: {{localize "JDRNINJA.variables.hint"}}</p>
+  {{#if error}}<p role="alert">{{error}}</p>{{else}}
+  <nav class="jn-variable-nav" aria-label="{{localize 'JDRNINJA.variables.scope'}}">
+    {{#each scopes}}<button type="button" data-action="scope" data-value="{{value}}" aria-pressed="{{selected}}">{{label}}</button>{{/each}}
+    <span>{{status}}</span>
+  </nav>
+  <div class="jn-variable-controller"><span>{{localize "JDRNINJA.variables.controller"}}: {{controllerName}} ({{controllerOnline}})</span>
+    {{#if canAssign}}<select name="controller" aria-label="{{localize 'JDRNINJA.variables.controller'}}">{{#each controllers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
+    <button type="button" data-action="controller">{{localize "JDRNINJA.variables.assign"}}</button>{{/if}}
+  </div>
+  {{#if uncertain}}<p role="alert">{{localize "JDRNINJA.variables.error.uncertain"}} <button type="button" data-action="reconcile">{{localize "JDRNINJA.variables.reconcile"}}</button></p>{{/if}}
+  <nav class="jn-variable-nav" aria-label="{{localize 'JDRNINJA.variables.tabs'}}">{{#each tabs}}<button type="button" data-action="switchTab" data-value="{{value}}" aria-pressed="{{selected}}">{{label}}</button>{{/each}}</nav>
+  <div class="jn-variable-columns">
+    <section class="jn-variable-records">
+      <label>{{localize "JDRNINJA.variables.search"}}<input name="search" type="search" value="{{search}}"></label>
+      {{#if writable}}<button type="button" data-action="create">{{localize "JDRNINJA.variables.create"}}</button>{{/if}}
+      {{#each rows}}<button class="jn-variable-row" type="button" data-action="select" data-id="{{id}}" data-row-name="{{name}}" aria-pressed="{{selected}}" {{#if hidden}}hidden{{/if}}>
+        <strong>{{name}}</strong><small>{{type}} · {{kind}}</small><span data-state-id="{{id}}">{{value}}</span></button>
+      {{else}}<p>{{localize "JDRNINJA.variables.empty"}}</p>{{/each}}
+    </section>
+    <section class="jn-variable-editor">
+      <p data-stale role="alert" {{#unless stale}}hidden{{/unless}}>{{localize "JDRNINJA.variables.error.conflict"}}</p>
+      <p data-message role="status">{{message}}</p>
+      {{#if editor}}{{#with editor}}
+      <fieldset {{#unless writable}}disabled{{/unless}}>
+        <label>{{localize "JDRNINJA.variables.name"}}<input type="text" maxlength="80" data-field="name" value="{{name}}"></label>
+        <label>{{localize "JDRNINJA.variables.typeLabel"}}<select data-field="type" {{#if readonlyType}}disabled{{/if}}>{{#each types}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+        {{#if variable}}
+          <label>{{localize "JDRNINJA.variables.kindLabel"}}<select data-field="kind">{{#each kindOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          {{#if numeric}}<div class="jn-variable-inline"><label>{{localize "JDRNINJA.variables.minimum"}}<input type="number" step="any" data-field="constraints.min" value="{{constraints.min}}"></label>
+            <label>{{localize "JDRNINJA.variables.maximum"}}<input type="number" step="any" data-field="constraints.max" value="{{constraints.max}}"></label></div>
+            <label><input type="checkbox" data-field="constraints.clamp" {{#if constraints.clamp}}checked{{/if}}> {{localize "JDRNINJA.variables.clamp"}}</label>{{/if}}
+          {{#if textual}}<label>{{localize "JDRNINJA.variables.maxLength"}}<input type="number" min="1" max="2000" data-field="constraints.maxLength" value="{{constraints.maxLength}}"></label>{{/if}}
+          {{#if computed}}<label>{{localize "JDRNINJA.variables.expression"}}<textarea rows="4" data-field="expression">{{expressionText}}</textarea></label>
+            <p class="hint">{{localize "JDRNINJA.variables.expressionHint"}}</p>
+            <div class="jn-variable-inline"><select name="reference" aria-label="{{localize 'JDRNINJA.variables.insert'}}">{{#each references}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button type="button" data-action="insert">{{localize "JDRNINJA.variables.insert"}}</button></div>{{/if}}
+          {{#if selection}}<label>{{localize "JDRNINJA.variables.listLabel"}}<select data-field="list"><option value="">{{localize "JDRNINJA.variables.choose"}}</option>{{#each lists}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label>{{localize "JDRNINJA.variables.default"}}<select data-field="default"><option value="">{{localize "JDRNINJA.variables.unset"}}</option>{{#each entryChoices}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label><input type="checkbox" data-field="wrap" {{#if wrap}}checked{{/if}}> {{localize "JDRNINJA.variables.wrap"}}</label>{{/if}}
+        {{else}}<button type="button" data-action="entryAdd">{{localize "JDRNINJA.variables.entryAdd"}}</button>{{/if}}
+        {{#each values}}<fieldset data-value-key="{{key}}">
+          <legend>{{#if entry}}{{localize "JDRNINJA.variables.entry"}}{{else}}{{label}}{{/if}}</legend>
+          {{#if entry}}<label>{{localize "JDRNINJA.variables.label"}}<input maxlength="80" type="text" data-value-field="label" value="{{label}}"></label>{{else}}
+            <label><input type="checkbox" data-value-field="unset" {{#if unset}}checked{{/if}}> {{localize "JDRNINJA.variables.unset"}}</label>{{/if}}
+          {{#if document}}<label>{{localize "JDRNINJA.variables.sourceLabel"}}<select data-value-field="source">{{#each sources}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label>{{localize "JDRNINJA.variables.user"}}<select data-value-field="user">{{#each users}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label>{{localize "JDRNINJA.variables.uuid"}}<input type="text" maxlength="512" data-value-field="value" list="jn-variable-documents" value="{{valueText}}"></label>
+            <button type="button" data-action="openDocument" data-id="{{key}}">{{localize "JDRNINJA.variables.openDocument"}}</button>
+          {{else}}{{#if boolean}}<select data-value-field="value" aria-label="{{label}}">{{#each boolChoices}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{value}}</option>{{/each}}</select>
+          {{else}}<label>{{localize "JDRNINJA.variables.value"}}<input type="{{#if numeric}}number{{else}}text{{/if}}" step="any" maxlength="2000" data-value-field="value" value="{{valueText}}"></label>{{/if}}{{/if}}
+          {{#if runtime}}<p class="hint">{{localize "JDRNINJA.variables.currentHint"}}</p>{{/if}}
+          {{#if entry}}<div class="jn-variable-inline"><button type="button" data-action="entryUp" data-id="{{key}}" {{#if first}}disabled{{/if}}>{{localize "JDRNINJA.variables.up"}}</button><button type="button" data-action="entryDown" data-id="{{key}}" {{#if last}}disabled{{/if}}>{{localize "JDRNINJA.variables.down"}}</button><button type="button" data-action="entryRemove" data-id="{{key}}">{{localize "JDRNINJA.variables.remove"}}</button></div>{{/if}}
+        </fieldset>{{/each}}
+        <datalist id="jn-variable-documents">{{#each documents}}<option value="{{uuid}}">{{name}}</option>{{/each}}</datalist>
+        {{#if operationOptions}}<fieldset><legend>{{localize "JDRNINJA.variables.currentAction"}}</legend>
+          <select name="operation" aria-label="{{localize 'JDRNINJA.variables.currentAction'}}">{{#each operationOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select>
+          {{#if selection}}<select name="currentEntry" aria-label="{{localize 'JDRNINJA.variables.entry'}}"><option value="">{{localize "JDRNINJA.variables.unset"}}</option>{{#each currentEntryChoices}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>{{/if}}
+          {{#if numeric}}<label>{{localize "JDRNINJA.variables.amount"}}<input name="amount" type="number" min="0" value="1" step="any"></label>{{/if}}
+          <button type="button" data-action="mutate">{{localize "JDRNINJA.variables.apply"}}</button></fieldset>{{/if}}
+      </fieldset>
+      <div class="jn-variable-inline"><button type="button" data-action="preview">{{localize "JDRNINJA.variables.preview"}}</button>
+        {{#if writable}}<button type="button" data-action="save" {{#if ../busy}}disabled{{/if}}>{{localize "JDRNINJA.variables.save"}}</button><button type="button" data-action="duplicate">{{localize "JDRNINJA.variables.duplicate"}}</button>{{#if existing}}<button type="button" data-action="remove">{{localize "JDRNINJA.variables.remove"}}</button>{{/if}}{{/if}}
+        <button type="button" data-action="reload">{{localize "JDRNINJA.variables.reload"}}</button></div>
+      <p>{{localize "JDRNINJA.variables.dependencies"}}: {{#each dependencies}}{{this}}{{#unless @last}}, {{/unless}}{{else}}{{localize "JDRNINJA.variables.none"}}{{/each}}</p>
+      <p class="hint">{{localize "JDRNINJA.variables.externalReferences"}}</p>
+      {{/with}}{{else}}<p>{{localize "JDRNINJA.variables.selectHint"}}</p>{{/if}}
+    </section>
+  </div>
+  {{/if}}
+</div>
