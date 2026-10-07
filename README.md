@@ -2,8 +2,11 @@
 
 **Control your table. Sync your characters. Bring your rolls to the stream.**
 
-Stream Deck control, Atlas character sync, live dice overlays, and D&D creature
-generation in one module for **Foundry VTT V14**.
+An extension of the [JDR Ninja website](https://www.jdr.ninja), this module brings
+the site's features directly into **Foundry VTT V14**.
+
+Stream Deck control, Atlas character sync, live dice overlays, and procedural D&D
+creature generation in one module.
 
 ## Stream Deck: control Foundry with a button
 
@@ -41,8 +44,8 @@ Private rolls stay private. Live overlay rolls require a paid subscription.
 
 ## D&D generators: from idea to Foundry actor
 
-Generate a **monster or NPC**, preview the result, and create a native Foundry
-actor with its items and activities.
+Use **procedural generation** to create a **monster or NPC**, preview the result,
+and import it as a native Foundry actor with its items and activities.
 
 GM-only, with premium access. Requires **Foundry V14 and D&D5e 5.3.3**.
 
