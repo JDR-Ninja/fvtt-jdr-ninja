@@ -2,7 +2,7 @@ import { MODULE_ID, I18N } from "../constants.js";
 import { ControlError, requireValue } from "../stream-deck/protocol.js";
 import { variableService } from "./service.js";
 import { VALUE_TYPES, DOCUMENT_TYPES, SCOPES, copy, uuid7, operations, preview } from "./schema.js";
-import { parseExpression, formatExpression, inspectExpression } from "./expressions.js";
+import { parseExpression, formatExpression, inspectExpression, expressionReferences } from "./expressions.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 export const VT = key => game.i18n.localize(`${I18N}.variables.${key}`);
@@ -22,10 +22,10 @@ export function typedValue(type, raw, source = "uuid", userId = "") {
 export function dependencies(stores, scope, collection, id) {
   const rows = [];
   for (const s of SCOPES) for (const v of stores[s].variables) {
-    let uses = collection === "lists" && v.list?.scope === scope && v.list.id === id;
-    const visit = node => { if (!node) return; if (collection === "variables" && node.op === "ref" && node.scope === scope && node.id === id) uses = true;
-      for (const child of node.args ?? []) visit(child); };
-    visit(v.expression); if (uses) rows.push(`${VT(s)}: ${v.name}`);
+    // A variable used as a part of a document path counts like any other reference.
+    const uses = collection === "lists" ? v.list?.scope === scope && v.list.id === id
+      : Boolean(v.expression) && expressionReferences(v.expression).some(node => node.scope === scope && node.id === id);
+    if (uses) rows.push(`${VT(s)}: ${v.name}`);
   }
   return rows;
 }
@@ -44,7 +44,10 @@ export class VariablePanel extends HandlebarsApplicationMixin(ApplicationV2) {
       .map(key => [key, function(event, target) { return this._action(key, target); }])) };
   static PARTS = { body: { template: `modules/${MODULE_ID}/templates/variables.hbs`, scrollable: [""] } };
   scope = "personal"; collection = "variables"; search = ""; draft = null; baseRevision = null; dirty = false; busy = false; message = "";
-  label(scope, id) { const variable = this.stores[scope]?.variables.find(v => v.id === id); return `${VT(scope)}: ${variable?.name ?? id} [${id}]`; }
+  /** A variable is written by its name alone; the id only stands in when the variable no longer exists. */
+  label(scope, id) { return this.stores[scope]?.variables.find(v => v.id === id)?.name ?? id; }
+  /** The scopes an expression may read: a world definition sees the world only, a personal one sees both. */
+  readableScopes() { return SCOPES.filter(s => this.scope !== "world" || s === "world"); }
   async _prepareContext() {
     try { this.stores = variableService.stores(); this.projection = await variableService.projection(); }
     catch (error) { const message = variableError(error); return { error: message, advanced: VT("advanced"), layout: JSON.stringify(["error", message]) }; }
@@ -77,8 +80,9 @@ export class VariablePanel extends HandlebarsApplicationMixin(ApplicationV2) {
       numeric: d.type === "number", textual: d.type === "text", constraints: d.constraints ?? {},
       expressionText: this.expressionText ?? (d.expression ? formatExpression(d.expression, (s, i) => this.label(s, i)) : ""),
       dependencies: dependencies(this.stores, this.scope, this.collection, d.id),
-      references: SCOPES.filter(s => this.scope !== "world" || s === "world").flatMap(s => this.stores[s].variables.filter(v => v.id !== d.id).map(v => ({ value: `${s}:${v.id}`, label: this.label(s, v.id) }))),
-      lists: SCOPES.filter(s => this.scope !== "world" || s === "world").flatMap(s => this.stores[s].lists.filter(l => l.type === d.type).map(l => option(`${s}:${l.id}`, `${d.list?.scope}:${d.list?.id}`, `${VT(s)}: ${l.name}`))),
+      referenceGroups: this.readableScopes().map(s => ({ label: VT(s), options: this.stores[s].variables.filter(v => v.id !== d.id).map(v => ({ value: `${s}:${v.id}`, label: this.label(s, v.id) })) }))
+        .filter(group => group.options.length),
+      lists: this.readableScopes().flatMap(s => this.stores[s].lists.filter(l => l.type === d.type).map(l => option(`${s}:${l.id}`, `${d.list?.scope}:${d.list?.id}`, `${VT(s)}: ${l.name}`))),
       operationOptions: variable && existing && existing.kind === d.kind ? operations(existing).map(op => ({ value: op, label: VT(`operation.${op}`) })) : [],
       values: [] };
     if (variable && d.kind === "stored") context.values = [{ key: "default", label: VT("default"), value: d.default }, { key: "current", label: VT("current"), value: existing?.current ?? d.current, runtime: Boolean(existing) }];
@@ -307,9 +311,10 @@ export class VariablePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   compiledDraft() {
     const d = copy(this.draft);
     if (this.collection === "variables" && d.kind === "computed") {
-      d.expression = parseExpression(this.expressionText ?? formatExpression(d.expression, (s, i) => this.label(s, i)), label => {
-        const matches = SCOPES.flatMap(s => variableService.stores()[s].variables.filter(v => this.label(s, v.id) === label).map(v => ({ scope: s, id: v.id })));
-        requireValue(matches.length === 1, "missingVariable"); return matches[0]; });
+      // A name resolves to exactly one variable among those this editor may read.
+      d.expression = parseExpression(this.expressionText ?? formatExpression(d.expression, (s, i) => this.label(s, i)), name => {
+        const matches = this.readableScopes().flatMap(s => variableService.stores()[s].variables.filter(v => v.name.trim() === name.trim()).map(v => ({ scope: s, id: v.id })));
+        requireValue(matches.length > 0, "missingVariable"); requireValue(matches.length === 1, "duplicateName"); return matches[0]; });
       inspectExpression(d.expression, (s, i) => variableService.stores()[s].variables.find(v => v.id === i), this.scope, new Set([`${this.scope}:${d.id}`]));
     }
     return d;

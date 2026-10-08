@@ -5,6 +5,7 @@ import { capabilities as readCapabilities, catalog, generation } from "../script
 import { buildActor } from "../scripts/creatures/generated/dnd-foundry/export.mjs";
 import { validateStore } from "../scripts/variables/schema.js";
 import { validateMacroDeclaration } from "../scripts/variables/dispatcher.js";
+import { formatExpression } from "../scripts/variables/expressions.js";
 import { identity, requestId } from "./creatures-fixture.mjs";
 
 test("README showcase responses satisfy the module contracts", () => {
@@ -19,4 +20,11 @@ test("README showcase responses satisfy the module contracts", () => {
   }
   validateStore(worldVariables("gamemaster", "Actor.abcdefghijklmnop"));
   validateMacroDeclaration(MACRO.arguments);
+});
+
+test("README hero inspiration reads as a simple document field path", () => {
+  const store = worldVariables("gamemaster", "Actor.abcdefghijklmnop");
+  const variable = store.variables.find(v => v.id === "hero-inspiration");
+  assert.equal(formatExpression(variable.expression, (scope, id) => store.variables.find(v => v.id === id).name),
+    "@{Spotlight hero}.system.attributes.inspiration");
 });

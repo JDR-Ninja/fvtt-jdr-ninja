@@ -8,7 +8,8 @@ import { PROTOCOL_VERSION, MAX_MESSAGE_BYTES, ControlError, requireValue, normal
 
 const HANDSHAKE_MS = 10000;
 const HEARTBEAT_MS = 15000;
-const SYNC_EVENTS = ["createActor", "updateActor", "deleteActor", "createMacro", "updateMacro", "deleteMacro",
+// Item events too: an actor's derived values, which document field expressions read, depend on its items.
+const SYNC_EVENTS = ["createActor", "updateActor", "deleteActor", "createItem", "updateItem", "deleteItem", "createMacro", "updateMacro", "deleteMacro",
   "createScene", "updateScene", "deleteScene", "createToken", "updateToken", "deleteToken",
   "createPlaylist", "updatePlaylist", "deletePlaylist", "createPlaylistSound", "updatePlaylistSound", "deletePlaylistSound",
   "createJournalEntry", "updateJournalEntry", "deleteJournalEntry", "createJournalEntryPage", "updateJournalEntryPage",

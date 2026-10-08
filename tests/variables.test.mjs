@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import { emptyStore, validateStore, readStore, validateValue, uuid7, copy, preview, validateProjectionCapacity } from "../scripts/variables/schema.js";
-import { parseExpression, inspectExpression } from "../scripts/variables/expressions.js";
+import { emptyStore, validateStore, readStore, validateValue, uuid7, copy, preview, validateProjectionCapacity, VARIABLE_VERSION } from "../scripts/variables/schema.js";
+import { parseExpression, inspectExpression, formatExpression, expressionReferences, UNKNOWN_TYPE } from "../scripts/variables/expressions.js";
 import { VariableService } from "../scripts/variables/service.js";
 import { VariableActions, validateMacroDeclaration, usesVariables, usesUpdates } from "../scripts/variables/dispatcher.js";
 import { FoundryActions } from "../scripts/stream-deck/actions.js";
+import { StreamDeckBridge } from "../scripts/stream-deck/bridge.js";
 
 const ref = (id, scope = "world") => ({ source: "variable", scope, id });
 const variable = (id, type = "number", value = 1, extra = {}) => ({ id, name: id, type, kind: "stored", current: value, default: value, constraints: {}, ...extra });
@@ -318,4 +319,199 @@ test("document.update inside applyAndExecute commits the variable once and updat
   await assert.rejects(u.actions.execute(command("variable.applyAndExecute", { mutations: [{ operation: "toggle", variable: ref("b") }],
     action: { action: "document.update", parameters: { document: "Item.sword", changes: [change("system.on", "set", ref("b"))] } } })), { code: "denied" });
   assert.equal(f.writes(), 2);
+});
+
+/** Names as the editor shows them, compiled to the scope and ID the store keeps. */
+const named = { "Ritual countdown": { scope: "world", id: "countdown" }, Hero: { scope: "world", id: "hero" }, Ability: { scope: "world", id: "ability" },
+  Index: { scope: "world", id: "index" }, Token: { scope: "world", id: "token" }, Flag: { scope: "world", id: "flag" } };
+const nameOf = (scope, id) => Object.keys(named).find(name => named[name].scope === scope && named[name].id === id);
+const parseNamed = text => parseExpression(text, name => named[name]);
+const roundTrip = text => formatExpression(parseNamed(text), nameOf);
+test("expressions read back as typed: names, ASCII operators and only the parentheses precedence needs", () => {
+  for (const text of ["@{Ritual countdown} * 2", "(@{Ritual countdown} + 1) * 2", "@{Ritual countdown} + 2 * 3", "@{Ritual countdown} - (@{Index} - 1)",
+    "@{Ritual countdown} - @{Index} - 1", "-@{Ritual countdown} * 2", "-(@{Ritual countdown} * 2)", "!(@{Flag} && @{Flag}) || !@{Flag}", "(@{Flag} || @{Flag}) && @{Flag}",
+    'if(@{Ritual countdown} > 1, "big", concat("n=", @{Ritual countdown}, "\\""))', "min(@{Ritual countdown}, 3) / 2", "@{Hero}.system.attributes.inspiration", "@{Hero}.name",
+    "@{Hero}.system.abilities.@{Ability}.value", "@{Token}.actor.system.attributes.hp.value", "@{Hero}.system.abilities.@{Ability}.mod + 1 >= 3 == @{Flag}"])
+    assert.equal(roundTrip(text), text);
+  for (const [typed, shown] of [["(@{Ritual countdown}) + (2 * 3)", "@{Ritual countdown} + 2 * 3"], ["((@{Ritual countdown} + 1)) * 2", "(@{Ritual countdown} + 1) * 2"],
+    ["@{ Ritual countdown } × 2 − 1", "@{Ritual countdown} * 2 - 1"], ["@{Flag} || (@{Flag} && @{Flag})", "@{Flag} || @{Flag} && @{Flag}"],
+    ["documentName(@{Hero})", "@{Hero}.name"], ["documentUuid(@{Token})", "@{Token}.uuid"]])
+    assert.equal(roundTrip(typed), shown);
+  const hero = { op: "ref", scope: "world", id: "hero" }, ability = { op: "ref", scope: "world", id: "ability" };
+  assert.deepEqual(parseNamed("@{Hero}.system.abilities.@{Ability}.value"), { op: "field", args: [hero], path: ["system", "abilities", ability, "value"] });
+  assert.deepEqual(parseNamed("documentName(@{Hero})"), { op: "documentName", args: [hero] });
+  assert.deepEqual(expressionReferences(parseNamed("@{Hero}.system.abilities.@{Ability}.value + @{Ritual countdown}")), [hero, ability, { op: "ref", scope: "world", id: "countdown" }]);
+  // A stored expression from the previous syntax displays in the new one.
+  const legacy = { op: "concat", args: [{ op: "documentName", args: [hero] }, { op: "literal", type: "text", value: " · " },
+    { op: "multiply", args: [{ op: "add", args: [{ op: "ref", scope: "world", id: "countdown" }, { op: "literal", type: "number", value: 1 }] }, { op: "literal", type: "number", value: 2 }] }] };
+  assert.equal(formatExpression(legacy, nameOf), 'concat(@{Hero}.name, " · ", (@{Ritual countdown} + 1) * 2)');
+  for (const [text, code] of [["@{Hero}.constructor.name", "invalidExpression"], ["@{Hero}.__proto__", "invalidExpression"], ["@{Hero}.system.prototype", "invalidExpression"],
+    ["@{Hero} .name", "invalidExpression"], ["@{Hero}.", "invalidExpression"], ["@{Hero}..name", "invalidExpression"], ["@{Hero}.system name", "invalidExpression"],
+    ["@{Hero}.system.@{ }", "invalidExpression"], ["@{Hero}.@{Nobody}", "missingVariable"], [`@{Hero}${".a".repeat(33)}`, "expressionLimit"]])
+    assert.throws(() => parseNamed(text), { code }, text);
+});
+
+test("a hyphen joins words in a path key, and subtracts before a number, a variable or a space", () => {
+  const hero = { op: "ref", scope: "world", id: "hero" }, field = (...path) => ({ op: "field", args: [hero], path });
+  const one = { op: "literal", type: "number", value: 1 };
+  assert.deepEqual(parseNamed("@{Hero}.system.scale.rogue.sneak-attack"), field("system", "scale", "rogue", "sneak-attack"));
+  assert.deepEqual(parseNamed("@{Hero}.flags.jdr-ninja.mood_level"), field("flags", "jdr-ninja", "mood_level"));
+  assert.deepEqual(parseNamed("@{Hero}.system.attributes.hp.value-1"), { op: "subtract", args: [field("system", "attributes", "hp", "value"), one] });
+  assert.deepEqual(parseNamed("@{Hero}.system.scale.rogue.sneak-attack-1"), { op: "subtract", args: [field("system", "scale", "rogue", "sneak-attack"), one] });
+  assert.deepEqual(parseNamed("@{Hero}.system.attributes.hp.value-@{Ritual countdown}"),
+    { op: "subtract", args: [field("system", "attributes", "hp", "value"), { op: "ref", scope: "world", id: "countdown" }] });
+  assert.equal(roundTrip("@{Hero}.system.attributes.hp.value-1"), "@{Hero}.system.attributes.hp.value - 1");
+  assert.equal(roundTrip("@{Hero}.system.scale.rogue.sneak-attack"), "@{Hero}.system.scale.rogue.sneak-attack");
+  // Every stored key must read back the same way, so the store refuses one the editor would read as a subtraction.
+  for (const path of [["hp-1"], ["-hp"], ["hp-"], ["a--b"]]) assert.throws(() => validateStore({ ...emptyStore(), variables: [{ id: "c", name: "C", type: "number",
+    kind: "computed", constraints: {}, expression: { op: "field", args: [hero], path } }] }), { code: "invalidParameters" }, path[0]);
+});
+
+class DataModel {}
+class Collection extends Map {}
+/** Prepared actor data as a system builds it: Active Effects applied over `_source`, derived values on the prototype. */
+class CharacterData extends DataModel {
+  constructor() {
+    super(); this._source = { abilities: { dex: { value: 14 } }, attributes: { inspiration: false } };
+    Object.assign(this, { abilities: { dex: { value: 16, mod: 3 } }, attributes: { inspiration: true, hp: { value: 27, temp: null } },
+      details: { alignment: "Chaotic good", biography: "x".repeat(2001) }, slots: [5, 7], broken: NaN,
+      helper: () => ({ value: 1 }), links: new Map([["a", { value: 1 }]]), tags: new Set(["a"]) });
+  }
+  get spellDC() { return 8 + this.abilities.dex.mod; }
+}
+const fieldRefs = { ...named, Mine: { scope: "personal", id: "mine" }, MyHero: { scope: "personal", id: "myhero" }, N: { scope: "world", id: "n" }, Fight: { scope: "world", id: "fight" } };
+function heroFixture() {
+  const f = fixture(); let observe = () => true;
+  const hero = { uuid: "Actor.hero", documentName: "Actor", name: "Aldric Venn", testUserPermission: user => observe(user), system: new CharacterData(),
+    items: new Collection([["a", { value: 1 }]]), _source: { name: "Aldric Venn" } };
+  f.documents.set(hero.uuid, hero); f.add({ ...variable("hero", "Actor", { uuid: hero.uuid }), name: "Hero" }); f.add(variable("ability", "text", "dex"));
+  return { ...f, hero, observe: fn => { observe = fn; } };
+}
+/** Reads one computed value, replacing the previous probe so the store stays within its variable limit. */
+function probe(f, text, type = "number") {
+  const variables = f.stored.world.variables, index = variables.findIndex(v => v.id === "probe"); if (index >= 0) variables.splice(index, 1);
+  f.add(computed("probe", text, type, fieldRefs)); return f.service.read(ref("probe"));
+}
+async function withDataModels(fn) {
+  const original = globalThis.foundry; globalThis.foundry = { abstract: { DataModel } };
+  try { await fn(); } finally { globalThis.foundry = original; }
+}
+test("document fields read prepared data, derived values included, and give only numbers, booleans or text", async () => {
+  const f = heroFixture();
+  // Without Foundry's DataModel, an unknown class instance is not traversed.
+  await assert.rejects(probe(f, "@{Hero}.system.abilities.dex.value"), { code: "wrongValueType" });
+  await withDataModels(async () => {
+    assert.equal(await probe(f, "@{Hero}.system.abilities.dex.value"), 16);
+    assert.equal(await probe(f, "@{Hero}.system.abilities.@{Ability}.mod * 2"), 6);
+    assert.equal(await probe(f, "@{Hero}.system.spellDC"), 11);
+    assert.equal(await probe(f, "@{Hero}.system.attributes.inspiration", "boolean"), true);
+    assert.equal(await probe(f, "@{Hero}.system.slots.1"), 7);
+    assert.equal(await probe(f, "@{Hero}.system.details.alignment", "text"), "Chaotic good");
+    assert.equal(await probe(f, "@{Hero}.uuid", "text"), "Actor.hero");
+    assert.equal(await probe(f, "@{Hero}.name", "text"), "Aldric Venn"); assert.equal(await probe(f, "documentName(@{Hero})", "text"), "Aldric Venn");
+    // `.name` reads exactly as documentName() did, even for a document without a name.
+    const fight = { uuid: "Combat.c", documentName: "Combat", testUserPermission: () => true }; f.documents.set(fight.uuid, fight);
+    f.add(variable("fight", "Combat", { uuid: fight.uuid }));
+    assert.equal(await probe(f, "documentName(@{Fight})", "text"), ""); assert.equal(await probe(f, "@{Fight}.name", "text"), "");
+    for (const [text, code] of [["@{Hero}.system.attributes.missing", "unsetValue"], ["@{Hero}.system.missing.value", "unsetValue"], ["@{Hero}.system.attributes.hp.temp", "unsetValue"],
+      ["@{Hero}.system.attributes.hp", "wrongValueType"], ["@{Hero}.system.slots", "wrongValueType"], ["@{Hero}.system", "wrongValueType"], ["@{Hero}.system.broken", "wrongValueType"],
+      ["@{Hero}.system.helper", "wrongValueType"], ["@{Hero}.system.helper.value", "wrongValueType"], ["@{Hero}.system.links.a.value", "wrongValueType"],
+      ["@{Hero}.system.links.size", "wrongValueType"], ["@{Hero}.system.tags.size", "wrongValueType"], ["@{Hero}.items.a.value", "wrongValueType"],
+      ["@{Hero}.items.size", "wrongValueType"], ["@{Hero}.system.abilities.toString", "wrongValueType"], ["@{Hero}.system.details.alignment.length", "wrongValueType"]])
+      await assert.rejects(probe(f, text), { code }, text);
+    await assert.rejects(probe(f, "@{Hero}.system.details.biography", "text"), { code: "capacity" });
+  });
+});
+test("a variable in a field path replaces exactly one safe key", async () => withDataModels(async () => {
+  const f = heroFixture(); f.add(variable("index", "number", 1)); const set = (id, value) => { f.stored.world.variables.find(v => v.id === id).current = value; };
+  assert.equal(await probe(f, "@{Hero}.system.slots.@{Index}"), 7);
+  set("index", 1.5); await assert.rejects(probe(f, "@{Hero}.system.slots.@{Index}"), { code: "wrongValueType" });
+  for (const value of ["", "dex.value", "__proto__", "constructor", "prototype"]) {
+    set("ability", value); await assert.rejects(probe(f, "@{Hero}.system.abilities.@{Ability}.value"), { code: "wrongValueType" }, value);
+  }
+  set("ability", "x".repeat(250)); await assert.rejects(probe(f, "@{Hero}.system.abilities.@{Ability}.value"), { code: "capacity" });
+}));
+test("a field path needs its document readable and checks every document it crosses", async () => withDataModels(async () => {
+  const f = heroFixture(), token = { uuid: "Scene.s.Token.t", documentName: "Token", name: "Hero token", testUserPermission: () => true, actor: f.hero };
+  f.documents.set(token.uuid, token); f.add(variable("token", "Token", { uuid: token.uuid }));
+  f.add(computed("hp", "@{Token}.actor.system.attributes.hp.value", "number", fieldRefs)); f.add(computed("dex", "@{Hero}.system.abilities.dex.value", "number", fieldRefs));
+  f.observe(user => user.isGM === true);
+  assert.equal(await f.service.read(ref("hp")), 27); assert.equal(await f.service.read(ref("dex")), 16);
+  f.game.user = f.player;
+  await assert.rejects(f.service.read(ref("hp")), { code: "denied" }); await assert.rejects(f.service.read(ref("dex")), { code: "denied" });
+  const projection = await f.service.projection();
+  assert.deepEqual(["hp", "dex"].map(id => projection.state.find(s => s.id === id).status), ["denied", "denied"]);
+  assert(!JSON.stringify(projection.state).includes("27") && !JSON.stringify(projection.state).includes("16"));
+  f.observe(() => true); f.hero.hidden = true; await assert.rejects(f.service.read(ref("hp")), { code: "denied" });
+  f.game.user = f.gm; assert.equal(await f.service.read(ref("hp")), 27);
+  // A permission lost after the read invalidates the prepared value, also on a document only reached through another.
+  f.hero.hidden = false; const ctx = f.service.context(); assert.equal(await ctx.resolve("world", "hp"), 27);
+  f.observe(() => false); assert.throws(() => ctx.check(), { code: "denied" });
+}));
+test("static analysis leaves field types to the evaluation, but checks roots, path variables, scopes and cycles", async () => withDataModels(async () => {
+  const f = heroFixture(); f.add(variable("n", "number", 2)); f.add(variable("flag", "boolean", true));
+  f.add(variable("mine", "text", "dex"), "personal"); f.add(variable("myhero", "Actor", { uuid: "Actor.hero" }), "personal");
+  const lookup = (s, i) => f.stored[s].variables.find(v => v.id === i), inspect = (text, scope = "world") => inspectExpression(expression(text, fieldRefs), lookup, scope);
+  for (const [text, code] of [["@{N}.value", "wrongValueType"], ["@{Flag}.value", "wrongValueType"], ["@{Hero}.system.@{Flag}", "wrongValueType"], ["@{Hero}.system.@{Hero}", "wrongValueType"],
+    ["@{Hero}.system.abilities.@{Mine}.value", "scopeMismatch"], ["@{MyHero}.name", "scopeMismatch"]]) assert.throws(() => inspect(text), { code }, text);
+  assert.deepEqual(inspect("@{Hero}.system.abilities.@{Mine}.value", "personal"), { type: UNKNOWN_TYPE, dependencies: ["world:hero", "personal:mine"] });
+  // Accepted at save wherever a number, a boolean or text is expected, then read with the declared type.
+  let n = 0; const save = (text, type) => f.service.saveVariable("world", computed(`c${++n}`, text, type, fieldRefs), f.stored.world.revision).then(() => `c${n}`);
+  for (const [text, type, value] of [["@{Hero}.system.abilities.dex.value * 2", "number", 32], ['concat("HP ", @{Hero}.system.attributes.hp.value)', "text", "HP 27"],
+    ["if(@{Hero}.system.attributes.inspiration, @{Hero}.system.abilities.dex.mod, 0) > 1 && !@{Flag}", "boolean", false],
+    ['@{Hero}.system.details.alignment == "Chaotic good"', "boolean", true], ["@{Hero}.system.attributes.inspiration", "boolean", true]])
+    assert.equal(await f.service.read(ref(await save(text, type))), value, text);
+  for (const [text, type] of [["@{Hero}.name", "Actor"], ["if(@{Flag}, @{Hero}.name, @{Hero})", "Actor"], ["@{Hero}.system.abilities.dex.value == @{Hero}", "boolean"],
+    ['if(@{Flag}, @{Hero}.system.abilities.dex.value, 1) == "x"', "boolean"]])
+    await assert.rejects(save(text, type), { code: "wrongValueType" }, text);
+  // No implicit conversion when the value arrives.
+  for (const [text, type] of [["@{Hero}.system.details.alignment", "number"], ["@{Hero}.system.abilities.dex.value", "boolean"], ["@{Hero}.system.attributes.inspiration", "text"],
+    ["@{Hero}.system.details.alignment + 1", "number"], ["if(@{Hero}.system.abilities.dex.value, 1, 2)", "number"], ['@{Hero}.system.abilities.dex.value == "16"', "boolean"],
+    ["@{Hero}.system.details.alignment < 3", "boolean"], ["!@{Hero}.system.abilities.dex.value", "boolean"], ["@{Hero}.system.abilities.dex.value || true", "boolean"],
+    ["if(@{Flag}, @{Hero}.system.details.alignment, 1)", "number"]])
+    await assert.rejects(f.service.read(ref(await save(text, type))), { code: "wrongValueType" }, text);
+  // Variables inside a path are dependencies, so they close cycles too.
+  f.add(computed("a", "@{Hero}.system.abilities.@{B}.value", "number", { ...fieldRefs, B: { scope: "world", id: "b" } }));
+  f.add(computed("b", 'concat("d", @{A})', "text", { A: { scope: "world", id: "a" } }));
+  assert.throws(() => f.service.validateDefinitions(f.stored, "world", "a"), { code: "expressionCycle" });
+}));
+test("version 1 stores load and display in the new syntax, saved stores become version 2, newer ones are refused", async () => {
+  assert.equal(VARIABLE_VERSION, 2); assert.equal(emptyStore().version, 2);
+  const legacy = { version: 1, revision: 4, controller: "gm", lists: [], variables: [{ ...variable("countdown", "number", 3), name: "Ritual countdown" },
+    { id: "label", name: "Label", kind: "computed", type: "text", constraints: {}, expression: { op: "concat", args: [{ op: "documentName", args: [{ op: "ref", scope: "world", id: "hero" }] },
+      { op: "multiply", args: [{ op: "add", args: [{ op: "ref", scope: "world", id: "countdown" }, { op: "literal", type: "number", value: 1 }] }, { op: "literal", type: "number", value: 2 }] }] } }] };
+  const loaded = readStore(JSON.stringify(legacy)); assert.equal(loaded.version, 1);
+  assert.equal(formatExpression(loaded.variables[1].expression, nameOf), "concat(@{Hero}.name, (@{Ritual countdown} + 1) * 2)");
+  const f = fixture(); f.stored.world = { ...copy(legacy), variables: [legacy.variables[0]] };
+  await f.mutate("set", "countdown", { value: 4 }); assert.deepEqual([f.stored.world.version, f.stored.world.revision], [2, 5]);
+  assert.throws(() => readStore({ ...emptyStore(), version: 3 }), { code: "futureSchema" });
+  for (const version of [0, 1.5, "2", null]) assert.throws(() => readStore({ ...emptyStore(), version }), { code: "invalidStore" }, String(version));
+  const hero = { op: "ref", scope: "world", id: "hero" };
+  const store = expression => ({ ...emptyStore(), variables: [{ id: "f", name: "F", kind: "computed", type: "number", constraints: {}, expression }] });
+  assert.equal(readStore(store({ op: "field", args: [hero], path: ["system", { op: "ref", scope: "personal", id: "ability" }, "value"] })).version, 2);
+  for (const expression of [{ op: "field", args: [hero], path: [] }, { op: "field", args: [hero], path: ["__proto__"] }, { op: "field", args: [hero], path: ["a.b"] },
+    { op: "field", args: [hero], path: [""] }, { op: "field", args: [hero], path: [{ op: "literal", type: "text", value: "x" }] }, { op: "field", args: [hero], path: Array(33).fill("a") },
+    { op: "field", args: [hero], path: ["x".repeat(257)] }, { op: "field", args: [{ op: "literal", type: "number", value: 1 }], path: ["a"] }, { op: "field", args: [hero, hero], path: ["a"] },
+    { op: "field", args: [hero], path: [{ op: "ref", scope: "world", id: "bad id" }] }, { op: "field", args: [hero], path: [{ op: "ref", scope: "world", id: "x", extra: 1 }] },
+    { op: "field", args: [hero], path: ["a"], extra: 1 }, { ...hero, path: ["a"] }, { op: "add", args: [hero, hero], path: ["a"] }])
+    assert.throws(() => readStore(store(expression)), { code: "invalidStore" }, JSON.stringify(expression));
+});
+test("a saved name must differ from every variable the user can see, while loading keeps existing duplicates", async () => {
+  const f = fixture(); f.add({ ...variable("countdown"), name: "Ritual countdown" }); f.add({ ...variable("mine"), name: "Mine" }, "personal");
+  for (const [scope, draft] of [["world", { ...variable("other"), name: " Ritual countdown " }], ["world", { ...variable("other"), name: "Mine" }],
+    ["personal", { ...variable("other"), name: "Ritual countdown" }], ["personal", { ...variable("countdown"), name: "Ritual countdown" }]])
+    await assert.rejects(f.service.saveVariable(scope, draft, f.stored[scope].revision), { code: "duplicateName" }, `${scope}: ${draft.name}`);
+  assert.equal(f.writes(), 0);
+  await f.service.saveVariable("world", { ...variable("countdown"), name: "Ritual countdown", default: 5 }, 0);
+  await f.service.saveVariable("world", { ...variable("other"), name: "ritual countdown" }, 1); assert.equal(f.writes(), 2);
+  f.game.user = f.player;
+  await assert.rejects(f.service.saveVariable("personal", { ...variable("p"), name: "Ritual countdown" }, f.stored.personal.revision), { code: "duplicateName" });
+  assert.equal(readStore({ ...emptyStore(), variables: [{ ...variable("a"), name: "Same" }, { ...variable("b"), name: "Same" }] }).variables.length, 2);
+});
+test("item changes refresh variables, since an actor's derived values depend on its items", () => {
+  const hooks = {}; let invalidated = 0;
+  const bridge = new StreamDeckBridge({ game: () => null, variables: { subscribe: () => () => {}, invalidate: () => { invalidated++; } } });
+  bridge.registerHooks({ on: (event, handler) => { hooks[event] = handler; } });
+  for (const event of ["createItem", "updateItem", "deleteItem"]) hooks[event]();
+  assert.equal(invalidated, 3);
 });

@@ -125,7 +125,7 @@ try {
     const result = await gm.evaluate(async id => game.modules.get("jdr-ninja").api.execute("variable.applyAndExecute", { mutations: [{ operation: "toggle", variable: { source: "variable", scope: "world", id } }], action: { action: "game.pause", parameters: { paused: { source: "variable", scope: "world", id } } } }), id);
     assert.equal(result.details.variableCommit, "committed"); assert.equal(result.details.execution, "completed"); assert.equal(await gm.evaluate(() => game.paused), true);
     await panel.locator('[data-action="create"]').click(); await panel.locator('[data-field="name"]').fill("Double number"); await panel.locator('[data-field="kind"]').selectOption("computed");
-    const label = await gm.evaluate(id => `${game.i18n.localize("JDRNINJA.variables.world")}: Acceptance number [${id}]`, variableId);
+    const label = await gm.evaluate(id => game.settings.get("jdr-ninja", "variablesWorld").variables.find(v => v.id === id).name, variableId);
     await panel.locator('[data-field="expression"]').fill(`@{${label}} * 2`); await panel.locator('[data-action="save"]').click();
     await gm.waitForFunction(() => game.settings.get("jdr-ninja", "variablesWorld").variables.some(v => v.name === "Double number"));
     const derived = await gm.evaluate(async () => { const v = game.settings.get("jdr-ninja", "variablesWorld").variables.find(v => v.name === "Double number"); return game.modules.get("jdr-ninja").api.variables.read({ source: "variable", scope: "world", id: v.id }); });

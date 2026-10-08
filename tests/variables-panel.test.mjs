@@ -30,7 +30,7 @@ globalThis.game = { user, world: { id: "fixture" }, users: { contents: [user], g
   actors: collection, journal: collection, macros: collection, scenes: collection, playlists: collection, tables: collection, combats: collection };
 globalThis.canvas = {};
 globalThis.ui = { notifications: { warn: () => {} } };
-const { VariablePanel, dependencies, typedValue } = await import("../scripts/variables/panel.js");
+const { VariablePanel, VT, variableError, dependencies, typedValue } = await import("../scripts/variables/panel.js");
 const { MacroArgumentsPanel } = await import("../scripts/variables/macro-panel.js");
 
 test("advanced menus are available to players, use native user storage and have no activation preference", () => {
@@ -131,6 +131,120 @@ test("dependency discovery is explicit about scope and limited to the current us
   stores.world.variables.push({ id: "use2", name: "Derived", expression: { op: "ref", scope: "world", id: "ref" } });
   assert.equal(dependencies(stores, "world", "lists", "list").length, 1); assert.equal(dependencies(stores, "world", "variables", "ref").length, 1);
   assert.equal(dependencies(stores, "personal", "lists", "list").length, 0);
+});
+test("dependency discovery counts a variable used as a part of a document path", () => {
+  const stores = { world: emptyStore(), personal: emptyStore() };
+  const hero = { op: "ref", scope: "world", id: "hero" }, ability = { op: "ref", scope: "personal", id: "ability" };
+  const field = { op: "field", args: [hero], path: ["system", "abilities", ability, "value"] };
+  stores.world.variables.push({ id: "plain", name: "Plain", expression: { op: "ref", scope: "world", id: "other" } });
+  stores.world.variables.push({ id: "wrapped", name: "Wrapped", expression: { op: "add", args: [{ op: "literal", type: "number", value: 1 }, field] } });
+  assert.deepEqual(dependencies(stores, "personal", "variables", "ability"), [`${VT("world")}: Wrapped`]);
+  assert.deepEqual(dependencies(stores, "world", "variables", "hero"), [`${VT("world")}: Wrapped`]);
+  assert.deepEqual(dependencies(stores, "world", "variables", "other"), [`${VT("world")}: Plain`]);
+  assert.deepEqual(dependencies(stores, "world", "variables", "ability"), [], "a reference is matched by scope and id");
+  assert.deepEqual(dependencies(stores, "personal", "lists", "ability"), [], "a path part is never a list dependency");
+});
+
+const numberVariable = (id, name) => ({ id, name, type: "number", kind: "stored", constraints: {}, current: 1, default: 1 });
+const setVariables = (world, personal) => { stored.world.variables = world; stored.personal.variables = personal; };
+/** A panel editing a new computed variable whose expression text is `text`, in the given scope. */
+function expressionEditor(scope, text) {
+  const panel = new VariablePanel(); panel.scope = scope; panel.stores = variableService.stores();
+  panel.draft = { id: "calc", name: "Calc", type: "number", kind: "computed", constraints: {}, expression: { op: "literal", type: "number", value: 0 } };
+  panel.expressionText = text; panel.baseRevision = 0; return panel;
+}
+const failsWith = code => error => error.code === code;
+test("variables are written and listed by name alone, with no scope or identifier", async () => {
+  const level = { op: "ref", scope: "world", id: "w1" };
+  const computed = (id, name, expression) => ({ id, name, type: "number", kind: "computed", constraints: {}, expression });
+  setVariables([numberVariable("w1", "Level")], [numberVariable("p1", "Mine"),
+    computed("c1", "Alias", level), computed("c2", "Double", { op: "multiply", args: [level, { op: "literal", type: "number", value: 2 }] })]);
+  try {
+    const panel = new VariablePanel(); panel.stores = variableService.stores();
+    assert.equal(panel.label("world", "w1"), "Level"); assert.equal(panel.label("personal", "p1"), "Mine");
+    assert.equal(panel.label("world", "gone"), "gone", "the id only stands in for a variable that no longer exists");
+    assert.equal(panel.label("personal", "w1"), "w1", "a reference is looked up in its own scope");
+    // A stored reference reappears as the name the user typed.
+    panel.scope = "personal"; panel.baseRevision = 0;
+    const shown = async id => { panel.draft = copy(stored.personal.variables.find(v => v.id === id)); return (await panel._prepareContext()).editor.expressionText; };
+    const alias = await shown("c1"); assert.equal(alias, "@{Level}"); assert(!/World|Personal|\[|w1/.test(alias));
+    assert.equal(await shown("c2"), "@{Level} * 2");
+  } finally { setVariables([], []); }
+});
+test("an expression name resolves to exactly one variable, trimmed and compared exactly", () => {
+  setVariables([numberVariable("w1", "Level "), numberVariable("w2", "Tier")], [numberVariable("p1", "Mine")]);
+  try {
+    const ref = (scope, id) => ({ op: "ref", scope, id }), literal = value => ({ op: "literal", type: "number", value });
+    assert.deepEqual(expressionEditor("personal", "@{Level} * 2").compiledDraft().expression, { op: "multiply", args: [ref("world", "w1"), literal(2)] });
+    assert.deepEqual(expressionEditor("personal", "@{ Level  } + @{Mine}").compiledDraft().expression, { op: "add", args: [ref("world", "w1"), ref("personal", "p1")] });
+    for (const text of ["@{Absent} + 1", "@{level} + 1", "@{World: Level} + 1", "@{w1} + 1"]) {
+      assert.throws(() => expressionEditor("personal", text).compiledDraft(), failsWith("missingVariable"), text);
+    }
+  } finally { setVariables([], []); }
+});
+test("two variables sharing a name make the reference ambiguous, in the scopes the editor can read", () => {
+  setVariables([numberVariable("w1", "Level"), numberVariable("w2", "Tier"), numberVariable("w3", "Tier")], [numberVariable("p1", "Level")]);
+  try {
+    // A personal variable hides nothing: the world one with the same name is a second match for a personal editor.
+    assert.throws(() => expressionEditor("personal", "@{Level} + 1").compiledDraft(), failsWith("duplicateName"));
+    assert.throws(() => expressionEditor("world", "@{Tier} + 1").compiledDraft(), failsWith("duplicateName"));
+    assert.throws(() => expressionEditor("personal", "@{Tier} + 1").compiledDraft(), failsWith("duplicateName"));
+    // The world editor never sees the personal "Level", so that name is not ambiguous there.
+    assert.deepEqual(expressionEditor("world", "@{Level} + 1").compiledDraft().expression.args[0], { op: "ref", scope: "world", id: "w1" });
+  } finally { setVariables([], []); }
+});
+test("the world editor cannot resolve a personal variable", () => {
+  setVariables([numberVariable("w1", "Level")], [numberVariable("p1", "Mine")]);
+  try {
+    assert.throws(() => expressionEditor("world", "@{Mine} + 1").compiledDraft(), failsWith("missingVariable"));
+    assert.deepEqual(expressionEditor("personal", "@{Mine} + 1").compiledDraft().expression.args[0], { op: "ref", scope: "personal", id: "p1" });
+    assert.deepEqual(expressionEditor("world", "@{Level} + 1").compiledDraft().expression.args[0], { op: "ref", scope: "world", id: "w1" });
+  } finally { setVariables([], []); }
+});
+test("the insert list groups names by scope, omits empty groups and the edited variable, and inserts @{Name}", async () => {
+  setVariables([numberVariable("w1", "Level")], [numberVariable("p1", "Mine"), numberVariable("calc", "Calc")]);
+  try {
+    const personal = expressionEditor("personal", ""); personal.draft.id = "calc";
+    const groups = (await personal._prepareContext()).editor.referenceGroups;
+    assert.deepEqual(groups.map(group => [group.label, group.options.map(o => [o.value, o.label])]),
+      [[VT("world"), [["world:w1", "Level"]]], [VT("personal"), [["personal:p1", "Mine"]]]]);
+    const world = expressionEditor("world", ""); world.draft.id = "calc";
+    assert.deepEqual((await world._prepareContext()).editor.referenceGroups.map(group => group.label), [VT("world")]);
+    setVariables([], [numberVariable("p1", "Mine")]);
+    assert.deepEqual((await expressionEditor("personal", "")._prepareContext()).editor.referenceGroups.map(group => group.label), [VT("personal")]);
+
+    setVariables([numberVariable("w1", "Level")], []);
+    const panel = expressionEditor("personal", "1 + "); panel.stores = variableService.stores();
+    const input = { value: "1 + ", selectionStart: 4, selectionEnd: 4, focus() {},
+      setRangeText(text, start, end) { this.value = this.value.slice(0, start) + text + this.value.slice(end); } };
+    panel.element = { querySelector: selector => selector === '[name="reference"]' ? { value: "world:w1" } : selector === '[data-field="expression"]' ? input : null, querySelectorAll: () => [] };
+    await panel._action("insert", {});
+    assert.equal(input.value, "1 + @{Level}"); assert.equal(panel.expressionText, "1 + @{Level}"); assert(panel.dirty);
+    assert.equal(panel.compiledDraft().expression.args[1].id, "w1");
+  } finally { setVariables([], []); }
+});
+test("the variables template renders the grouped insert list and the path hint in all five locales", async () => {
+  const template = Handlebars.compile(await readFile(new URL("../templates/variables.hbs", import.meta.url), "utf8"));
+  setVariables([numberVariable("w1", "Level")], [numberVariable("p1", "<b>Mine</b>")]);
+  const panel = expressionEditor("personal", "@{Level} * 2"); const previous = game.i18n.localize;
+  try {
+    for (const lang of ["fr", "en", "de", "es", "it"]) {
+      const locale = JSON.parse(await readFile(new URL(`../lang/${lang}.json`, import.meta.url), "utf8"));
+      game.i18n.localize = key => locale[key] ?? key; Handlebars.registerHelper("localize", key => locale[key] ?? key);
+      const html = template(await panel._prepareContext());
+      assert(!html.includes("JDRNINJA."), lang);
+      const escaped = key => Handlebars.escapeExpression(locale[key]);
+      assert(html.includes(`<optgroup label="${escaped("JDRNINJA.variables.world")}"><option value="world:w1">Level</option></optgroup>`), lang);
+      assert(html.includes(`<optgroup label="${escaped("JDRNINJA.variables.personal")}"><option value="personal:p1">&lt;b&gt;Mine&lt;/b&gt;</option></optgroup>`), lang);
+      assert(html.indexOf("<optgroup") < html.indexOf("data-action=\"insert\"") && html.includes("@{Level} * 2"), lang);
+      const hint = locale["JDRNINJA.variables.expressionHint"];
+      assert(html.includes(escaped("JDRNINJA.variables.expressionHint")), lang); assert(hint.includes("@{") && hint.includes(".system.attributes.inspiration"), lang);
+      assert(!/documentName|documentUuid/.test(hint), lang);
+      for (const name of ["min", "max", "clamp", "round", "floor", "ceil", "abs", "if", "concat", "true", "false"]) assert(hint.includes(name), `${lang} ${name}`);
+      const duplicate = locale["JDRNINJA.variables.error.duplicateName"];
+      assert(duplicate, lang); assert.equal(variableError({ code: "duplicateName" }), duplicate, lang);
+    }
+  } finally { game.i18n.localize = previous; setVariables([], []); }
 });
 test("typed editor accepts false/zero without truthiness coercion and recipes stay explicit", () => {
   assert.equal(typedValue("number", "0"), 0); assert.equal(typedValue("boolean", "false"), false); assert.throws(() => typedValue("number", ""));

@@ -1,14 +1,40 @@
 import { MODULE_ID } from "../constants.js";
 import { ControlError, requireValue } from "../stream-deck/protocol.js";
-import { DOCUMENT_TYPES, LIMITS, SCOPES, copy, emptyStore, readStore, validateStore, validateValue,
-  validateReference, reference, keys, operations, uuid7, bytes, preview, validateProjectionCapacity } from "./schema.js";
-import { inspectExpression, evaluateExpression } from "./expressions.js";
+import { DOCUMENT_TYPES, LIMITS, SCOPES, VARIABLE_VERSION, copy, emptyStore, readStore, validateStore, validateValue,
+  validateReference, reference, keys, operations, uuid7, bytes, preview, validateProjectionCapacity, plain, forbiddenKey } from "./schema.js";
+import { inspectExpression, evaluateExpression, typeFits, valueType } from "./expressions.js";
 
 export const STORE_KEYS = Object.freeze({ world: "variablesWorld", personal: "variablesPersonal" });
 const RESOLUTION_CODES = new Set(["invalidParameters", "denied", "missingVariable", "missingList", "missingEntry", "missingDocument",
   "unsetValue", "wrongValueType", "wrongDocumentType", "outOfBounds", "capacity", "expressionCycle", "expressionLimit",
   "invalidExpression", "divisionByZero", "scopeMismatch", "staleState", "staleSelection", "ambiguousTarget", "unavailable"]);
 const readable = (document, user) => document?.testUserPermission?.(user, "OBSERVER") && (!document.hidden || user.isGM === true);
+/** A Foundry document, or an object shaped like one: each one a field path crosses must be readable. */
+function isDocument(value) {
+  const Document = globalThis.foundry?.abstract?.Document;
+  if (typeof Document === "function" && value instanceof Document) return true;
+  return typeof value?.testUserPermission === "function" && typeof (value.documentName ?? value.constructor?.documentName) === "string";
+}
+/** Field paths cross plain objects, arrays and Foundry data models only: never functions, maps, sets or collections. */
+function traversable(value) {
+  if (value === null || typeof value !== "object" || value instanceof Map || value instanceof Set) return false;
+  const DataModel = globalThis.foundry?.abstract?.DataModel;
+  return Array.isArray(value) || plain(value) || (typeof DataModel === "function" && value instanceof DataModel) || isDocument(value);
+}
+/** Reads prepared data, as a sheet shows it (Active Effects and derived values included), never the stored source. */
+function readPath(root, path, cross) {
+  let value = root;
+  for (const [index, part] of path.entries()) {
+    requireValue(typeof part === "string" && part.length > 0 && !part.includes(".") && !forbiddenKey(part), "wrongValueType");
+    if (index > 0 && isDocument(value)) cross(value);
+    requireValue(traversable(value), "wrongValueType");
+    try { value = value[part]; } catch { throw new ControlError("unavailable"); }
+    requireValue(value !== undefined && value !== null, "unsetValue");
+  }
+  if (isDocument(value)) cross(value);
+  if (typeof value === "string") { requireValue(value.length <= LIMITS.text, "capacity"); return value; }
+  requireValue(typeof value === "boolean" || Number.isFinite(value), "wrongValueType"); return value;
+}
 export const VARIABLE_ACTIONS = Object.freeze(Object.fromEntries(["set", "select", "next", "previous", "increment", "decrement", "toggle", "reset"]
   .map(op => [`variable.${op}`, { advanced: true, inputs: { variable: { type: "variable" },
     ...(["set", "select"].includes(op) ? { value: { type: op === "select" ? "entry" : "value" } } : {}),
@@ -68,7 +94,8 @@ export class VariableService {
     finally { if (this.operation === op) { this.operation = null; this.expected = null; this.notify({ idle: true }); } }
   }
   context(stores = this.stores()) {
-    const identity = this.identity(), epoch = this.epoch, cache = new Map(), documents = [], reads = new Map();
+    // `crossed`: documents a field path read through after its pinned root, such as a token's actor.
+    const identity = this.identity(), epoch = this.epoch, cache = new Map(), documents = [], crossed = [], reads = new Map();
     // Every variable and list definition a resolution read, so a confirmed check can prove its bindings unchanged.
     const read = (scope, collection, item) => reads.set(`${scope}|${collection}|${item.id}`,
       { scope, collection, id: item.id, json: JSON.stringify(item) });
@@ -88,6 +115,7 @@ export class VariableService {
           else { let currentDoc; try { currentDoc = this.resolveSync(pin.binding.uuid); } catch { /* Removed/unloaded document. */ }
             requireValue(currentDoc === pin.document, "missingDocument"); }
         }
+        for (const document of crossed) requireValue(readable(document, this.game().user), "denied");
       },
       resolve: async (scope, id, depth = 0) => {
         requireValue(SCOPES.includes(scope)); const key = `${scope}:${id}`;
@@ -95,9 +123,11 @@ export class VariableService {
         const v = stores[scope].variables.find(v => v.id === id); requireValue(v, "missingVariable"); read(scope, "variables", v);
         let value;
         if (v.kind === "computed") {
-          requireValue(inspectExpression(v.expression, (s, i) => stores[s]?.variables.find(v => v.id === i), scope,
-            new Set([key])).type === v.type, "wrongValueType");
+          requireValue(typeFits(inspectExpression(v.expression, (s, i) => stores[s]?.variables.find(v => v.id === i), scope,
+            new Set([key])).type, v.type), "wrongValueType");
           value = await evaluateExpression(v.expression, context, scope, depth);
+          // A field's type is only known now: the value must already have the declared type, without conversion.
+          requireValue(DOCUMENT_TYPES.includes(v.type) || valueType(value) === v.type, "wrongValueType");
         } else if (v.kind === "list") {
           requireValue(!(scope === "world" && v.list.scope === "personal"), "scopeMismatch");
           const list = stores[v.list.scope].lists.find(list => list.id === v.list.id);
@@ -121,6 +151,14 @@ export class VariableService {
       documentText: async (binding, field) => { const pin = documents.find(pin => JSON.stringify(pin.binding) === JSON.stringify(binding));
         requireValue(pin && readable(pin.document, this.game().user), "denied");
         const value = String(pin.document[field] ?? ""); requireValue(value.length <= LIMITS.text, "capacity"); return value; },
+      field: async (binding, path) => {
+        // `.name` and `.uuid` display what documentName() and documentUuid() wrote, so they read the same way.
+        if (path.length === 1 && ["name", "uuid"].includes(path[0])) return context.documentText(binding, path[0]);
+        const user = this.game().user, pin = documents.find(pin => JSON.stringify(pin.binding) === JSON.stringify(binding));
+        requireValue(pin && readable(pin.document, user), "denied");
+        return readPath(pin.document, path, document => { requireValue(readable(document, user), "denied");
+          if (!crossed.includes(document)) crossed.push(document); });
+      },
     };
     return context;
   }
@@ -161,8 +199,8 @@ export class VariableService {
         else requireValue(s !== scope || v.id !== definitionId, "missingList");
       }
       if (v.kind === "computed") {
-        try { requireValue(inspectExpression(v.expression, (s, i) => stores[s]?.variables.find(v => v.id === i), s,
-          new Set([`${s}:${v.id}`])).type === v.type, "wrongValueType"); }
+        try { requireValue(typeFits(inspectExpression(v.expression, (s, i) => stores[s]?.variables.find(v => v.id === i), s,
+          new Set([`${s}:${v.id}`])).type, v.type), "wrongValueType"); }
         catch (error) { if (s === scope && v.id === definitionId || !["missingVariable", "missingList"].includes(error.code)) throw error; }
       }
     }
@@ -171,7 +209,8 @@ export class VariableService {
     const before = op.context.stores[scope]; validateStore(candidate); op.guard();
     if (!controller) this.assertOwner(scope, op.context.stores);
     if (JSON.stringify(before) === JSON.stringify(candidate)) return { changed: false, revision: before.revision };
-    candidate.revision = before.revision + 1; validateStore(candidate);
+    // Every write saves the current schema version; an older module then reports `futureSchema` instead of misreading it.
+    candidate.version = VARIABLE_VERSION; candidate.revision = before.revision + 1; validateStore(candidate);
     this.expected = { scope, json: JSON.stringify(candidate) };
     try { await this.game().settings.set(MODULE_ID, STORE_KEYS[scope], copy(candidate)); }
     catch (error) { this.uncertain.add(scope); throw new ControlError("uncertain", { version: 1, variableCommit: "unknown", execution: "notStarted" }); }
@@ -210,13 +249,19 @@ export class VariableService {
   async configure(scope, baseRevision, edit, definitionId) {
     return this.run(async op => {
       this.assertOwner(scope, op.context.stores); const before = op.context.stores[scope];
-      requireValue(before.revision === baseRevision, "conflict"); const candidate = copy(before); edit(candidate);
+      requireValue(before.revision === baseRevision, "conflict"); const candidate = copy(before); edit(candidate, op.context.stores);
       const stores = { ...op.context.stores, [scope]: candidate }; this.validateDefinitions(stores, scope, definitionId);
       return this.persist(scope, candidate, op);
     });
   }
   saveVariable(scope, variable, baseRevision, { convert = false } = {}) {
-    return this.configure(scope, baseRevision, store => { const index = store.variables.findIndex(v => v.id === variable.id);
+    return this.configure(scope, baseRevision, (store, stores) => {
+      // The editor identifies variables by name: refuse one another variable this user can see already uses.
+      // Loading never enforces this, so an existing world with duplicates stays readable.
+      const label = typeof variable?.name === "string" ? variable.name.trim() : variable?.name;
+      requireValue(!SCOPES.some(s => (s === scope ? store : stores[s]).variables
+        .some(v => !(s === scope && v.id === variable.id) && v.name.trim() === label)), "duplicateName");
+      const index = store.variables.findIndex(v => v.id === variable.id);
       if (index < 0) store.variables.push(copy(variable)); else {
         const before = store.variables[index];
         requireValue(before.type === variable.type && (before.kind === variable.kind || convert), "incompatibleChange");

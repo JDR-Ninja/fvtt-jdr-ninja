@@ -194,6 +194,7 @@ try {
     if (game.paused) game.togglePause(false, { broadcast: true });
     await Folder.create({ name: "Bestiary", type: "Actor" });
     const actors = await Actor.createDocuments(heroes.map(hero => ({ name: hero.name, type: "character", img: hero.img,
+      ...(hero.inspired ? { system: { attributes: { inspiration: true } } } : {}),
       ...(hero.linked ? { flags: { "jdr-ninja": { atlasLink: { atlasCharacterId: hero.linked, syncedAtUtc: null, portraitHash: null } } } } : {}) })));
     await Macro.create({ name: macro.name, type: "script", command: macro.command, img: "icons/svg/fire.svg",
       flags: { "jdr-ninja": { arguments: macro.arguments } } });
@@ -299,11 +300,11 @@ try {
   await page.screenshot({ path: sidebarPath, clip: directory, animations: "disabled" });
   shots.push(sidebarPath); console.log(`Saved ${relative(root, sidebarPath)}`);
 
-  // Advanced controls: the world variables with the computed stream title open, then a macro's typed arguments.
+  // Advanced controls: the world variables with the computed hero inspiration open, then a macro's typed arguments.
   await page.evaluate(() => game.modules.get("jdr-ninja").api.openVariables());
   const variables = "jdr-ninja-variables";
   await click(variables, '[data-action="scope"][data-value="world"]');
-  await click(variables, '[data-action="select"][data-id="stream-title"]');
+  await click(variables, '[data-action="select"][data-id="hero-inspiration"]');
   await app(variables).locator('[data-field="expression"]').waitFor();
   await capture(variables, "variables", { height: "auto" });
   await page.evaluate(() => game.modules.get("jdr-ninja").api.openMacroArguments());

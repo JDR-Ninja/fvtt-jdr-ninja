@@ -73,7 +73,7 @@ commands, define computed variables, and pass typed arguments to compatible macr
 
 The variable and macro editors also work locally without a Stream Deck connection.
 
-![Variables window with world variables and a computed stream title](docs/images/variables.png)
+![Variables window with world variables and a computed value that reads the spotlight hero's inspiration](docs/images/variables.png)
 
 ![Compatible macros window declaring typed arguments for a damage macro](docs/images/macro-arguments.png)
 

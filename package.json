@@ -1,6 +1,6 @@
 {
   "name": "fvtt-jdr-ninja",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Account connections, Atlas character sync and VTT Overlay for the unified JDR Ninja Foundry VTT module.",

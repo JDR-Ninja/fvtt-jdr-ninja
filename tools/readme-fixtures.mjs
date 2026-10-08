@@ -114,7 +114,7 @@ export function monsterResult(body) {
 
 /** Player characters of the Atlas campaign. `linked` actors are linked before "Sync all" runs. */
 export const HEROES = [
-  { name: "Aldric Venn", img: "icons/svg/sword.svg", linked: "atlas-aldric" },
+  { name: "Aldric Venn", img: "icons/svg/sword.svg", linked: "atlas-aldric", inspired: true },
   { name: "Mira Thornfield", img: "icons/svg/mage-shield.svg", linked: "atlas-mira" },
   { name: "Brother Osk", img: "icons/svg/holy-shield.svg", linked: "atlas-osk" },
   { name: "Sefa Dunmore", img: "icons/svg/cowled.svg", linked: null },
@@ -133,24 +133,23 @@ export function overlayDiagnostics() {
     overlay: { exists: true, enabled: true, connectedClients: 1 }, tableCommands: { secondsSinceLastPoll: 3 } };
 }
 
-const literal = (type, value) => ({ op: "literal", type, value });
 const ref = id => ({ op: "ref", scope: "world", id });
 
 /** World variables, assigned to the Gamemaster. `heroUuid` is a character created for the screenshots. */
 export function worldVariables(controller, heroUuid) {
-  return { version: 1, revision: 1, controller,
+  return { version: 2, revision: 1, controller,
     lists: [{ id: "weather", name: "Weather", type: "text", entries: [
       { id: "clear", label: "Clear skies", value: "Clear skies" },
       { id: "rain", label: "Heavy rain", value: "Heavy rain" },
       { id: "fog", label: "Thick fog", value: "Thick fog" }] }],
     variables: [
-      { id: "inspiration", name: "Party inspiration", type: "number", kind: "stored", constraints: { min: 0, max: 5, clamp: true }, current: 3, default: 0 },
+      { id: "ritual", name: "Ritual countdown", type: "number", kind: "stored", constraints: { min: 0, max: 5, clamp: true }, current: 3, default: 0 },
       { id: "alarm", name: "Castle alarm raised", type: "boolean", kind: "stored", constraints: {}, current: false, default: false },
       { id: "weather-now", name: "Current weather", type: "text", kind: "list", constraints: {}, list: { scope: "world", id: "weather" },
         current: "fog", default: "clear", wrap: true },
       { id: "spotlight", name: "Spotlight hero", type: "Actor", kind: "stored", constraints: {}, current: { uuid: heroUuid }, default: null },
-      { id: "stream-title", name: "Stream title", type: "text", kind: "computed", constraints: {},
-        expression: { op: "concat", args: [literal("text", "Inspiration "), ref("inspiration"), literal("text", " · "), ref("weather-now")] } },
+      { id: "hero-inspiration", name: "Hero inspiration", type: "boolean", kind: "computed", constraints: {},
+        expression: { op: "field", args: [ref("spotlight")], path: ["system", "attributes", "inspiration"] } },
     ] };
 }
 
