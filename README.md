@@ -20,10 +20,10 @@ and share journal pages without hunting through windows.
 Buttons can follow your selected token or assigned character, with live game
 state for feedback. Commands respect your Foundry permissions.
 
-Requires the **JDR Ninja Stream Deck plugin and local companion**, installed
-separately. Local Foundry control does not require a JDR Ninja account.
+Requires the **JDR Ninja Stream Deck plugin**, installed separately. Local
+Foundry control does not require a JDR Ninja account.
 
-![Stream Deck window showing a ready connection to the local companion](docs/images/stream-deck.png)
+![Stream Deck window showing a ready connection to the Stream Deck plugin](docs/images/stream-deck.png)
 
 [Set up Stream Deck →](https://www.jdr.ninja/en/guide-stream-deck-foundry)
 
