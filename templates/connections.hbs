@@ -69,7 +69,7 @@
   </fieldset>
   {{#if isGM}}
     <fieldset>
-      <legend><i class="fa-solid fa-gem" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.heading"}} ({{localize "JDRNINJA.creatures.premium"}})</legend>
+      <legend>{{localize "JDRNINJA.creatures.heading"}}</legend>
       <div class="jn-creature-compatibility" role="status" data-compatibility="{{creatures.compatibility.code}}">
         <span class="badge"><i class="fa-solid {{creatures.compatibility.icon}}" aria-hidden="true"></i> {{creatures.compatibility.label}}</span>
         <p>{{creatures.compatibility.current}}</p>
@@ -87,8 +87,8 @@
       <div class="jdr-ninja__actions">
         <button type="button" data-action="pairCreatures" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.authorize"}}</button>
         <button type="button" data-action="checkCreatures" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.check"}}</button>
-        <button type="button" data-action="openMonster" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.monsterPremium"}}</button>
-        <button type="button" data-action="openNpc" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.npcPremium"}}</button>
+        <button type="button" data-action="openMonster" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.monsterShortcut"}}</button>
+        <button type="button" data-action="openNpc" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.npcShortcut"}}</button>
       </div>
     </fieldset>
     <fieldset>

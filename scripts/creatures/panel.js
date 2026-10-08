@@ -33,7 +33,6 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
       create: CreaturePanel.prototype._create,
       sheet: CreaturePanel.prototype._sheet,
       connections: CreaturePanel.prototype._connections,
-      subscription: CreaturePanel.prototype._subscription,
     },
   };
   static PARTS = { body: { template: `modules/${MODULE_ID}/templates/creatures.hbs` } };
@@ -162,7 +161,6 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   _dismiss() { if (this._controller) return; this._preview = null; this._previewState = null; this._actor = null; this.render(); }
   /** The module API opens the `ConnectionPanel.open()` singleton (an import would be circular). */
   _connections() { return game.modules.get(MODULE_ID)?.api?.openConnections(); }
-  _subscription() { window.open(SUBSCRIPTIONS_URL, "_blank", "noopener,noreferrer"); }
   invalidate() {
     this._epoch++; this._controller?.abort(); this._controller = null;
     this._catalog = null; this._preview = null; this._previewState = null; this._actor = null;

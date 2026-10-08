@@ -1,6 +1,6 @@
 import { MODULE_ID, SETTINGS } from "../constants.js";
 import { overlayRelay } from "../overlay/relay.js";
-import { VariableActions, usesVariables } from "../variables/dispatcher.js";
+import { VariableActions, usesVariables, usesUpdates } from "../variables/dispatcher.js";
 import { variableService } from "../variables/service.js";
 import { buildSnapshot } from "./snapshot.js";
 import { PROTOCOL_VERSION, MAX_MESSAGE_BYTES, ControlError, requireValue, normalizeBridgeUrl,
@@ -88,7 +88,7 @@ export class StreamDeckBridge {
       if (!this.current(generation)) return;
       this.notify("authenticating");
       // Only the session ID before the companion proves the key: anything listening on the loopback port gets the hello.
-      this.send({ type: "hello", session: { id: this.session.id }, nonce: this.clientNonce, extensions: { variables: 1 } });
+      this.send({ type: "hello", session: { id: this.session.id }, nonce: this.clientNonce, extensions: { variables: 1, updates: 1 } });
     };
     ws.onmessage = event => {
       // Keep handshake and command admission ordered even while verifying an HMAC asynchronously.
@@ -131,7 +131,7 @@ export class StreamDeckBridge {
     if (message.type === "authenticated") {
       requireValue(this.state === "awaitingAuthentication", "authenticationFailed");
       this.clearTimer(this.handshakeTimer); this.handshakeTimer = null;
-      this.extensions = message.extensions?.variables === 1 ? { variables: 1 } : {};
+      this.extensions = { ...(message.extensions?.variables === 1 ? { variables: 1 } : {}), ...(message.extensions?.updates === 1 ? { updates: 1 } : {}) };
       this.notify("synchronizing"); this.pushSnapshot("snapshot");
       this.lastPong = this.now(); this.heartbeat(generation); void this.verifyCapabilities(); return;
     }
@@ -173,7 +173,7 @@ export class StreamDeckBridge {
   }
   publishSnapshot(type, variables) {
     const snapshot = this.snapshot({ game: this.game(), canvas: this.canvas(), ui: this.ui(), config: this.config(),
-      selectionRevision: this.selectionRevision, overlay: this.overlay, capabilities: this.capabilities, variables });
+      selectionRevision: this.selectionRevision, overlay: this.overlay, capabilities: this.capabilities, variables, extensions: this.extensions });
     const baseRevision = this.revision++;
     this.dirty = false;
     this.notify("synchronizing");
@@ -241,6 +241,7 @@ export class StreamDeckBridge {
       requireValue(this.state === "ready", "notSynchronized");
       validateCommand(command, this.session.id, this.revision, this.now());
       requireValue(!usesVariables(command) || this.extensions.variables === 1 && command.extensions?.variables === 1, "unsupportedExtension");
+      requireValue(!usesUpdates(command) || this.extensions.updates === 1 && command.extensions?.updates === 1, "unsupportedExtension");
       requireValue(this.pending < 20 && this.results.size < 256, "busy");
       const epoch = this.changeEpoch;
       guard = ({ ownOperation = null, confirmed = false } = {}) => {

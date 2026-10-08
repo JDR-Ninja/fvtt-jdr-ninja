@@ -12,7 +12,8 @@
     "creatures:check": "node tools/sync-creature-mapper.mjs --check",
     "creatures:fixtures": "node tools/update-creature-fixtures.mjs",
     "test": "node --test \"tests/*.test.mjs\" \"scripts/atlas/converters/__tests__/*.test.mjs\"",
-    "test:creatures-native": "node tools/creatures-e2e.mjs"
+    "test:creatures-native": "node tools/creatures-e2e.mjs",
+    "screenshots": "node tools/readme-screenshots.mjs"
   },
   "engines": {
     "node": ">=20"

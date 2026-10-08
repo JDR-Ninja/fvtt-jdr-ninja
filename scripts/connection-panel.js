@@ -76,7 +76,8 @@ export class ConnectionPanel extends HandlebarsApplicationMixin(ApplicationV2) {
         status: text(result?.ok ? "status.connected" : config.configured ? "status.saved" : "status.disconnected"),
         error: result && !result.ok && result.reason !== "unconfigured" ? text(`error.${result.reason}`) : "",
         limited: result?.ok && result.allowed === false,
-        showSubscriptionLink: kind === "account" && (!config.configured || result?.ok !== true || result.allowed === false),
+        // The one link for a browser without an account; otherwise only once a check finds no overlay access.
+        showSubscriptionLink: kind === "account" && (!config.configured || result?.ok === true && result.allowed === false),
       };
     }
     context.atlas.enabled = context.isGM && atlasEnabled();

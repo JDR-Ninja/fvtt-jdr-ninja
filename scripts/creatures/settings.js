@@ -8,11 +8,12 @@ export function registerCreatureSettings(onChange, monsterMenu, npcMenu) {
     name: `${I18N}.creatures.enable`, hint: `${I18N}.creatures.enableHint`, scope: "client",
     config: true, type: Boolean, default: false, onChange,
   }));
-  for (const [kind, type] of [["monster", monsterMenu], ["npc", npcMenu]]) {
+  // The menus reuse the generator windows' icons.
+  for (const [kind, type, icon] of [["monster", monsterMenu, "fa-solid fa-dragon"], ["npc", npcMenu, "fa-solid fa-user"]]) {
     if (!type) continue;
     game.settings.registerMenu(MODULE_ID, `${kind}Generator`, {
-      name: `${I18N}.creatures.${kind}`, label: `${I18N}.creatures.${kind}Premium`, hint: `${I18N}.creatures.menuHint`,
-      icon: "fa-solid fa-gem", type, restricted: true,
+      name: `${I18N}.creatures.${kind}`, label: `${I18N}.creatures.${kind}Shortcut`, hint: `${I18N}.creatures.menuHint`,
+      icon, type, restricted: true,
     });
   }
 }

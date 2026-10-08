@@ -1,23 +1,23 @@
 import { MODULE_ID, SETTINGS } from "../constants.js";
-import { STATUS, localizeStatus } from "./constants.js";
-import { atlasAccess, atlasEnabled } from "./availability.js";
-import { cancelAtlasRequests } from "./api.js";
+import { STATUS } from "./constants.js";
+import { atlasAccess } from "./availability.js";
+import { AtlasApi, cancelAtlasRequests } from "./api.js";
 import { AtlasSyncApp } from "./sync-app.js";
 import { getLink } from "./flags.js";
 import { pushActor, createActor, notify } from "./sync.js";
+
+/** The Actors entry points exist only for a GM who can sync now; Connections explains every other state. */
+function atlasReady() { return atlasAccess().ok && AtlasApi.hasToken(); }
 
 export function renderAtlasButton(_app, html) {
   const root = html instanceof HTMLElement ? html : html?.[0];
   if (!root) return;
   root.querySelector(".jdr-ninja-atlas-open")?.remove();
-  if (game.user?.isGM !== true || !atlasEnabled()) return;
+  if (!atlasReady()) return;
   const button = document.createElement("button");
   button.type = "button";
   button.className = "jdr-ninja-atlas-open";
   button.textContent = game.i18n.localize("JDRNINJA_ATLAS_SYNC.app.title");
-  const access = atlasAccess();
-  button.disabled = !access.ok;
-  if (!access.ok) button.title = localizeStatus(access.status);
   button.addEventListener("click", () => AtlasSyncApp.open());
   const header = root.querySelector(".header-actions") || root.querySelector(".directory-header");
   const footer = root.querySelector(".directory-footer");
@@ -42,7 +42,7 @@ function actorFromEntry(li) {
 export function atlasContextOptions(_app, items) {
   items.push({
     label: "JDRNINJA_ATLAS_SYNC.context.sync", icon: "fa-solid fa-globe",
-    visible: li => atlasAccess().ok && actorFromEntry(li)?.type === "character",
+    visible: li => atlasReady() && actorFromEntry(li)?.type === "character",
     onClick: async (_event, li) => {
       const access = atlasAccess();
       if (!access.ok) { notify(access); return; }

@@ -74,6 +74,8 @@ export class OverlayPanel extends HandlebarsApplicationMixin(ApplicationV2) {
       filters: choices(["allPublic", "playersOnly"], relay.setting("overlayForwardFilter") ?? "allPublic", value => value),
       holds: choices(["0", "1", "2", "3", "5"], relay.setting("overlayCardHoldSeconds") ?? "0", value => `hold${value}`),
       rows, hasDiagnostics: rows.length > 0,
+      // Offered only when the account's diagnostics report sending as not included.
+      needsSubscription: data?.entitled === false,
       lastSuccess: success ? Fmt("lastSuccess", { when: new Date(success).toLocaleString() }) : "",
       lastError: failure > success ? String(relay.setting("overlayLastError") || "") : "",
     };

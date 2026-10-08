@@ -59,6 +59,11 @@ test("every settings menu registers a launcher that opens its window's singleton
       variables: VariablePanel, macroArguments: MacroArgumentsPanel } });
   } finally { game.settings = previous; }
   assert.deepEqual([...menus.keys()].sort(), Object.keys(windows).sort());
+  // Generator menus show the short label and their window's icon, with no premium marker.
+  for (const [key, kind] of [["monsterGenerator", "monster"], ["npcGenerator", "npc"]]) {
+    assert.equal(menus.get(key).label, `JDRNINJA.creatures.${kind}Shortcut`);
+    assert.equal(menus.get(key).icon, windows[key].DEFAULT_OPTIONS.window.icon);
+  }
   for (const [key, Window] of Object.entries(windows)) {
     const menu = menus.get(key), opened = { window: key };
     assert(menu.type.prototype instanceof Application, key);
@@ -128,19 +133,21 @@ test("the player context hides Atlas configuration", async () => {
   } finally { game.user.isGM = previous; }
 });
 
-test("Connections offers subscription links independently for unverified accounts and creature access", async () => {
-  const savedAccess = creatureClient.access;
+test("Connections keeps one subscription link without an account, otherwise only after an access check finds no subscription", async () => {
+  const savedAccess = creatureClient.access, savedSettings = game.settings;
   const strings = JSON.parse(await readFile(new URL('../lang/fr.json', import.meta.url), 'utf8'));
   const renderer = Handlebars.create(); renderer.registerHelper('localize', key => strings[key] ?? key);
   const render = renderer.compile(await readFile(new URL('../templates/connections.hbs', import.meta.url), 'utf8'));
   try {
-    for (const [account, creatureAccess, accountLink, creatureLink] of [
-      [null, null, true, true],
-      [{ ok: false, reason: 'unauthorized' }, null, true, true],
-      [{ ok: true, allowed: false }, { entitled: true }, true, false],
-      [{ ok: true, allowed: true }, { entitled: false, reason: 'tierRequired' }, false, true],
-      [{ ok: true, allowed: true }, { entitled: true, reason: 'devicePermissionRequired' }, false, false],
+    for (const [token, account, creatureAccess, accountLink, creatureLink] of [
+      ['', null, null, true, false],
+      ['fixture-secret', null, null, false, false],
+      ['fixture-secret', { ok: false, reason: 'unauthorized' }, null, false, false],
+      ['fixture-secret', { ok: true, allowed: false }, { entitled: true }, true, false],
+      ['fixture-secret', { ok: true, allowed: true }, { entitled: false, reason: 'tierRequired' }, false, true],
+      ['fixture-secret', { ok: true, allowed: true }, { entitled: true, reason: 'devicePermissionRequired' }, false, false],
     ]) {
+      game.settings = { ...savedSettings, get: (module, key) => key === "accountToken" ? token : savedSettings.get(module, key) };
       const panel = new ConnectionPanel(); panel._results.account = account; creatureClient.access = creatureAccess;
       const context = await panel._prepareContext(), html = render(context);
       assert.equal(context.account.showSubscriptionLink, accountLink);
@@ -148,11 +155,15 @@ test("Connections offers subscription links independently for unverified account
       assert.equal(html.includes('data-jdr-subscriptions="account"'), accountLink);
       assert.equal(html.includes('data-jdr-subscriptions="creatures"'), creatureLink);
       if (accountLink || creatureLink) assert(html.includes('href="https://www.jdr.ninja/abonnements" target="_blank" rel="noopener noreferrer"'));
+      // The creature section and its buttons carry no premium marker.
+      assert(html.includes(`<legend>${Handlebars.escapeExpression(strings["JDRNINJA.creatures.heading"])}</legend>`));
+      for (const kind of ["monster", "npc"]) assert(html.includes(Handlebars.escapeExpression(strings[`JDRNINJA.creatures.${kind}Shortcut`])));
+      assert(!html.includes("fa-gem")); assert(!html.includes("(Premium)"));
       const player = render({ ...context, isGM: false });
       assert.equal(player.includes('data-jdr-subscriptions="account"'), accountLink);
       assert(!player.includes('data-jdr-subscriptions="creatures"'));
     }
-  } finally { creatureClient.access = savedAccess; }
+  } finally { creatureClient.access = savedAccess; game.settings = savedSettings; }
 });
 
 test("the panel serializes operations and closing aborts a pending flow without rendering a late result", async () => {

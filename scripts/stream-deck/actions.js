@@ -1,5 +1,6 @@
 import { ControlError, requireValue } from "./protocol.js";
 import { overlayRelay } from "../overlay/relay.js";
+import { LIMITS, bytes, copy, plain } from "../variables/schema.js";
 
 const documentInput = (...documents) => ({ type: "document", documents });
 const booleanInput = { type: "boolean" };
@@ -46,6 +47,7 @@ export const ACTIONS = Object.freeze({
   "combat.nextRound": definition({ document: documentInput("Combat") }, { gm: true }),
   "combat.rollInitiative": definition({ document: documentInput("Combat") }, { gm: true }),
   "overlay.test": definition({}),
+  "document.update": definition({ document: { type: "anyDocument" }, changes: { type: "changes", max: 16 } }),
 });
 
 export const values = collection => Array.from(collection?.contents ?? collection ?? []);
@@ -53,6 +55,41 @@ export const documentType = document => document?.documentName ?? document?.cons
 export const canObserve = (document, user) => Boolean(document?.testUserPermission?.(user, "OBSERVER"));
 const owner = (document, user) => requireValue(document?.testUserPermission?.(user, "OWNER"), "denied");
 const callable = value => requireValue(typeof value === "function", "unavailable");
+const holdsDocument = input => input.type === "document" || input.type === "anyDocument";
+const exactKeys = (value, ...names) => plain(value) && Object.keys(value).length === names.length && names.every(name => Object.hasOwn(value, name));
+const UNSAFE_SEGMENTS = new Set(["__proto__", "prototype", "constructor"]);
+
+/** JSON-compatible data only, walked without recursion and bounded so a hostile depth or a cycle cannot exhaust the stack. */
+function jsonValue(root) {
+  const pending = [root];
+  for (let nodes = 0; pending.length;) {
+    requireValue(++nodes <= LIMITS.bytes, "capacity");
+    const value = pending.pop();
+    if (Array.isArray(value)) for (const entry of value) pending.push(entry);
+    else if (plain(value)) { requireValue(!Object.hasOwn(value, "__proto__")); for (const entry of Object.values(value)) pending.push(entry); }
+    else requireValue(value === null || typeof value === "boolean" || typeof value === "string" || Number.isFinite(value));
+  }
+}
+
+/** Validated, detached copy of a `document.update` change list. Paths are unchecked beyond their shape: Foundry decides. */
+function updateRows(rows, { max }) {
+  requireValue(Array.isArray(rows) && rows.length > 0 && rows.length <= max);
+  for (const row of rows) {
+    requireValue(plain(row) && Object.keys(row).every(name => ["path", "operation", "value"].includes(name))
+      && typeof row.path === "string" && row.path.length > 0 && row.path.length <= 256
+      && row.path.split(".").every(segment => segment && !UNSAFE_SEGMENTS.has(segment))
+      && ["set", "increment", "decrement", "toggle", "unset"].includes(row.operation));
+    if (row.operation === "set") { requireValue(Object.hasOwn(row, "value")); jsonValue(row.value); }
+    else if (row.operation === "increment" || row.operation === "decrement") requireValue(Number.isFinite(row.value));
+    else requireValue(!Object.hasOwn(row, "value"));
+  }
+  // One row per field: a path may neither repeat nor contain another row's path.
+  requireValue(rows.every((a, i) => rows.every((b, j) => i === j || b.path !== a.path && !b.path.startsWith(`${a.path}.`))));
+  let size;
+  try { size = bytes(rows); } catch { throw new ControlError("capacity"); }
+  requireValue(size <= LIMITS.bytes, "capacity");
+  return copy(rows);
+}
 
 export class FoundryActions {
   constructor({ game = () => globalThis.game, canvas = () => globalThis.canvas, ui = () => globalThis.ui,
@@ -62,21 +99,26 @@ export class FoundryActions {
   }
 
   async resolve(input, specification, selectionRevision, currentSelectionRevision) {
+    // An `anyDocument` input takes any document type and leaves permission to Foundry's update check.
+    const any = specification.type === "anyDocument";
+    if (any && typeof input === "string") input = { uuid: input };
     requireValue(input && typeof input === "object" && !Array.isArray(input));
+    if (any) requireValue(exactKeys(input, ...(input.source === undefined ? ["uuid"] : input.source === "userCharacter" ? ["source", "userId"] : ["source"])));
     let document;
-    if (input.source === "selectedToken") {
+    if (input.source === "selectedToken" || any && input.source === "selectedTokenActor") {
       requireValue(selectionRevision === currentSelectionRevision(), "staleSelection");
       const selected = this.canvas()?.tokens?.controlled ?? [];
       requireValue(selected.length === 1, "ambiguousTarget");
-      document = selected[0].document;
+      document = input.source === "selectedToken" ? selected[0].document : selected[0].document.actor;
     } else if (input.source === "userCharacter") {
-      requireValue(specification.documents.includes("Actor") && typeof input.userId === "string");
+      requireValue((any || specification.documents.includes("Actor")) && typeof input.userId === "string");
       document = this.game().users.get(input.userId)?.character;
     } else {
-      requireValue(input.source === undefined && typeof input.uuid === "string" && input.uuid.length <= 512);
+      requireValue(input.source === undefined && typeof input.uuid === "string" && input.uuid.length <= 512 && (!any || input.uuid.length > 0));
       document = await this.resolveUuid(input.uuid);
     }
     requireValue(document, "missingDocument");
+    if (any) return document;
     requireValue(specification.documents.includes(documentType(document)), "wrongDocumentType");
     requireValue(canObserve(document, this.game().user), "denied");
     return document;
@@ -94,8 +136,9 @@ export class FoundryActions {
     for (const [key, input] of Object.entries(specification.inputs)) {
       const value = command.parameters[key];
       if (value === undefined && input.optional) continue;
-      if (input.type === "document") parameters[key] = await this.resolve(value, input,
+      if (holdsDocument(input)) parameters[key] = await this.resolve(value, input,
         command.selectionRevision, selectionRevision);
+      else if (input.type === "changes") parameters[key] = updateRows(value, input);
       else {
         requireValue(input.type === "boolean" ? typeof value === "boolean"
           : input.type === "number" ? Number.isFinite(value) && value >= input.min && value <= input.max
@@ -110,13 +153,18 @@ export class FoundryActions {
     requireValue(this.game().user === executingUser && (!specification.gm || executingUser.isGM), "wrongSession");
     // UUID resolution can yield: recheck all permissions and contextual selection before any operation.
     for (const [key, input] of Object.entries(specification.inputs)) {
-      if (input.type !== "document" || !parameters[key]) continue;
-      requireValue(canObserve(parameters[key], executingUser), "denied");
+      if (!holdsDocument(input) || !parameters[key]) continue;
+      if (input.type === "document") requireValue(canObserve(parameters[key], executingUser), "denied");
       const binding = command.parameters[key];
       if (binding.source === "selectedToken") {
         requireValue(command.selectionRevision === selectionRevision(), "staleSelection");
         const selected = this.canvas()?.tokens?.controlled ?? [];
         requireValue(selected.length === 1 && selected[0].document === parameters[key], "staleSelection");
+      }
+      if (binding.source === "selectedTokenActor") {
+        requireValue(command.selectionRevision === selectionRevision(), "staleSelection");
+        const selected = this.canvas()?.tokens?.controlled ?? [];
+        requireValue(selected.length === 1 && selected[0].document.actor === parameters[key], "staleSelection");
       }
       if (binding.source === "userCharacter") requireValue(
         this.game().users.get(binding.userId)?.character === parameters[key], "staleState");
@@ -186,8 +234,32 @@ export class FoundryActions {
         requireValue(token.getBarAttribute(parameters.bar)?.editable === true && Number.isFinite(token.getBarAttribute(parameters.bar)?.value), "unavailable"); break;
       case "actor.status": owner(actor, executingUser);
         requireValue(!actor.inCompendium && values(this.config()?.statusEffects).some(effect => effect.id === parameters.status), "unavailable"); break;
+      case "document.update": this.buildUpdate(document, parameters.changes, executingUser); break;
       default: break;
     }
+  }
+
+  /** Nested update for the change rows, read from the document's source data: Active Effects and derived values never leak in. */
+  buildUpdate(document, rows, user) {
+    callable(document.update);
+    requireValue(document._source && typeof document._source === "object", "unavailable");
+    const foundry = this.foundry(), { getProperty, setProperty } = foundry.utils ?? {}, update = {};
+    callable(getProperty); callable(setProperty);
+    for (const { path, operation, value } of rows) {
+      const current = getProperty(document._source, path);
+      let next;
+      if (operation === "set") next = copy(value);
+      else if (operation === "unset") { callable(foundry.data?.operators?.ForcedDeletion); next = new foundry.data.operators.ForcedDeletion(); }
+      else if (operation === "toggle") { requireValue(typeof current === "boolean", "wrongValueType"); next = !current; }
+      else {
+        requireValue(Number.isFinite(current), "wrongValueType");
+        next = operation === "increment" ? current + value : current - value;
+        requireValue(Number.isFinite(next), "outOfBounds");
+      }
+      setProperty(update, path, next);
+    }
+    requireValue(document.canUserModify?.(user, "update", update) === true, "denied");
+    return update;
   }
 
   async execute(command, context = {}) { return this.dispatch(await this.prepare(command, context), context); }
@@ -197,12 +269,14 @@ export class FoundryActions {
     requireValue(this.game()?.socket?.connected !== false, "wrongSession");
     requireValue(this.game().user === executingUser && (!ACTIONS[command.action].gm || executingUser.isGM), "wrongSession");
     for (const [key, input] of Object.entries(ACTIONS[command.action].inputs)) {
-      if (input.type !== "document" || !parameters[key]) continue;
-      requireValue(canObserve(parameters[key], executingUser), "denied");
+      if (!holdsDocument(input) || !parameters[key]) continue;
+      if (input.type === "document") requireValue(canObserve(parameters[key], executingUser), "denied");
       const binding = command.parameters[key];
       // A confirmed operation still needs the same single selected token, whatever selection revision it reached.
       if (binding.source === "selectedToken") requireValue((confirmed || command.selectionRevision === selectionRevision())
         && this.canvas()?.tokens?.controlled?.length === 1 && this.canvas().tokens.controlled[0].document === parameters[key], "staleSelection");
+      else if (binding.source === "selectedTokenActor") requireValue((confirmed || command.selectionRevision === selectionRevision())
+        && this.canvas()?.tokens?.controlled?.length === 1 && this.canvas().tokens.controlled[0].document.actor === parameters[key], "staleSelection");
       else if (binding.source === "userCharacter") requireValue(this.game().users.get(binding.userId)?.character === parameters[key], "staleState");
     }
     if (actor) requireValue(canObserve(actor, executingUser), "denied");
@@ -218,10 +292,10 @@ export class FoundryActions {
     const { command, parameters } = prepared;
     guard({ confirmed: true });
     for (const [key, input] of Object.entries(ACTIONS[command.action].inputs)) {
-      if (input.type !== "document" || !parameters[key]) continue;
+      if (!holdsDocument(input) || !parameters[key]) continue;
       const binding = command.parameters[key];
       let current;
-      try { current = await this.resolveUuid(typeof binding.uuid === "string" ? binding.uuid : parameters[key].uuid); }
+      try { current = await this.resolveUuid(typeof binding === "string" ? binding : typeof binding.uuid === "string" ? binding.uuid : parameters[key].uuid); }
       catch { /* A removed or unloaded document is missing. */ }
       requireValue(current === parameters[key], "missingDocument");
     }
@@ -332,6 +406,7 @@ export class FoundryActions {
         owner(actor, executingUser);
         requireValue(!actor.inCompendium && values(this.config()?.statusEffects).some(effect => effect.id === parameters.status), "unavailable");
         await actor.toggleStatusEffect(parameters.status, { active: parameters.active }); break;
+      case "document.update": await document.update(this.buildUpdate(document, parameters.changes, executingUser)); break;
       case "combat.start": await document.startCombat(); break;
       case "combat.end": {
         // V14 DialogV2 does not catch a throwing button callback: the dialog would stay open with every button

@@ -5,13 +5,11 @@
     <p class="hint">{{localize "JDRNINJA.creatures.error.incompatibleSystem"}}</p>
   </div>
   <div class="jdr-ninja__status" aria-live="polite">
-    <span><i class="fa-solid fa-gem" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.premium"}}</span>
     <strong>{{status}}</strong>
   </div>
   {{#if showSubscriptionLink}}<p><a href="{{subscriptionsUrl}}" target="_blank" rel="noopener noreferrer" data-jdr-subscriptions="creatures">{{localize "JDRNINJA.creatures.subscription"}}</a></p>{{/if}}
   <div class="jdr-ninja__actions">
     <button type="button" data-action="connections">{{localize "JDRNINJA.creatures.connections"}}</button>
-    <button type="button" data-action="subscription">{{localize "JDRNINJA.creatures.subscription"}}</button>
     <button type="button" data-action="check" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.check"}}</button>
   </div>
   {{#if error}}<p role="alert">{{error}}</p>{{/if}}

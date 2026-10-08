@@ -329,6 +329,18 @@ test("diagnostics remain available when the relay is off", async () => {
   assert.equal(requests[0].path, "/api/foundry/v1/overlay/diagnostics");
 });
 
+test("the overlay window offers its subscription page only when diagnostics report sending as not included", async () => {
+  const renderer = Handlebars.create(); renderer.registerHelper("localize", key => copy[key] ?? key);
+  const render = renderer.compile(await readFile(new URL("../templates/overlay.hbs", import.meta.url), "utf8"));
+  const diagnostics = entitled => ({ ok: true, tokenKind: "foundry", account: "Fixture GM", entitled });
+  for (const [data, expected] of [[null, false], [diagnostics(true), false], [diagnostics(false), true]]) {
+    const panel = new OverlayPanel(); panel._diagnostics = data;
+    const context = await panel._prepareContext();
+    assert.equal(context.needsSubscription, expected);
+    assert.equal(render(context).includes('data-action="subscription"'), expected);
+  }
+});
+
 test("transport exceptions become local network errors without leaking the exception", async () => {
   relay.request = async () => { throw new Error("fixture-sensitive-error"); };
   const result = await relay.postRoll(buildOverlayPayload(message()));

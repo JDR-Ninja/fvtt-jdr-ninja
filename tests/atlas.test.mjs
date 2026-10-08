@@ -17,7 +17,7 @@ class ForcedDeletion {}
 globalThis.foundry = { applications: { api: { ApplicationV2: App, HandlebarsApplicationMixin: base => base } },
   data: { operators: { ForcedDeletion } } };
 const { AtlasSyncApp } = await import("../scripts/atlas/sync-app.js");
-const { refreshAtlasIntegration, atlasContextOptions } = await import("../scripts/atlas/integration.js");
+const { refreshAtlasIntegration, atlasContextOptions, renderAtlasButton } = await import("../scripts/atlas/integration.js");
 const originalFetch = globalThis.fetch;
 const copy = JSON.parse(await readFile(new URL("../lang/fr.json", import.meta.url), "utf8"));
 let settings, actors, requests, notices;
@@ -108,6 +108,27 @@ test("disabled integration, player access, unsupported systems, and the old modu
     assert.equal(contextEntry().visible(directoryEntry(pc.id)), false, mode);
   }
   assert.equal(requests.length, 0);
+});
+
+test("the Actors directory offers Atlas only to a GM who can sync now, never as a disabled button", () => {
+  globalThis.document = { createElement: () => ({ addEventListener() {} }) };
+  const render = () => {
+    const added = [], header = { appendChild: button => added.push(button) };
+    renderAtlasButton(null, [{ querySelector: selector => selector === ".header-actions" ? header : null }]);
+    return added;
+  };
+  const pc = actor("directory");
+  const [button] = render();
+  assert.equal(button.className, "jdr-ninja-atlas-open"); assert.notEqual(button.disabled, true);
+  assert.equal(contextEntry().visible(directoryEntry(pc.id)), true);
+  for (const mode of ["disabled", "player", "legacy", "system", "token"]) {
+    settings.set("atlasEnabled", mode !== "disabled"); settings.set("atlasToken", mode === "token" ? "" : "fixture-atlas-token");
+    game.user.isGM = mode !== "player";
+    game.modules = new Map(mode === "legacy" ? [["jdr-ninja-atlas-sync", { active: true }]] : []);
+    game.system = { id: mode === "system" ? "swade" : "dnd5e", version: "5.3.0" };
+    assert.deepEqual(render(), [], mode);
+    assert.equal(contextEntry().visible(directoryEntry(pc.id)), false, mode);
+  }
 });
 
 test("the context-menu entry exists from the first render and follows the switch, the GM role and the actor type", async () => {

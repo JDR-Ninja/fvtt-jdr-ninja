@@ -13,13 +13,18 @@ const errors = new Set(["invalidRequest", "invalidOptions", "unauthorized", "wro
 export class CreatureClient {
   constructor({ getGame = () => game, request = requestJson, now = Date.now, sanitize, makeId = uuid7 } = {}) {
     Object.assign(this, { getGame, request, now, sanitize, makeId });
-    this.revision = 0; this.controllers = new Set(); this.access = null; this.cooldownUntil = 0;
+    this.revision = 0; this.controllers = new Set(); this.access = null; this.cooldownUntil = 0; this.listeners = new Set();
+  }
+  /** Called when a server answer grants or withdraws generation access; `invalidate()` callers redraw themselves. */
+  onAccessChange(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  setAccess(access) {
+    const changed = (this.access?.allowed === true) !== (access?.allowed === true);
+    this.access = access;
+    if (changed) for (const listener of this.listeners) { try { listener(); } catch { /* A view cannot break access checks. */ } }
   }
   enabled() { return this.getGame().settings.get(MODULE_ID, SETTINGS.creaturesEnabled) === true; }
-  needsSubscription(reason) {
-    return !this.capture().token || ["connectionRequired", "unauthorized", "tierRequired"].includes(reason)
-      || this.access?.entitled !== true;
-  }
+  /** Only a server answer that this account lacks the subscription; a missing connection or permission needs another step. */
+  needsSubscription(reason) { return reason === "tierRequired" || this.access?.entitled === false; }
   capture() {
     const current = this.getGame();
     return { revision: this.revision, world: current.world?.id, user: current.user?.id, gm: current.user?.isGM === true,
@@ -65,7 +70,7 @@ export class CreatureClient {
         const jsonDelay = Number.isSafeInteger(error?.retryAfterSeconds) && error.retryAfterSeconds > 0 ? Math.min(error.retryAfterSeconds, 86400) * 1000 : 0;
         const delay = Math.min(86400000, Math.max(jsonDelay, result.retryAfterMs || 0));
         if (["rateLimited", "generationBusy"].includes(code)) this.cooldownUntil = Math.max(this.cooldownUntil, this.now() + (delay || 2000));
-        if (["unauthorized", "devicePermissionRequired", "tierRequired", "wrongDeviceKind"].includes(code)) this.access = null;
+        if (["unauthorized", "devicePermissionRequired", "tierRequired", "wrongDeviceKind"].includes(code)) this.setAccess(null);
         const fields = Array.isArray(error?.fieldErrors) ? error.fieldErrors.slice(0, 32).map(f => String(f.field ?? "").replace(/^options\./, "")) : [];
         throw new CreatureError(code, fields, delay);
       }
@@ -76,7 +81,7 @@ export class CreatureClient {
     const data = capabilities(await this.call(`${ROOT}/capabilities`, { signal, state }));
     this.assertCurrent(state);
     const feature = data.features.dndCreatures;
-    this.access = { allowed: feature.allowed, entitled: feature.entitled, reason: feature.reason, label: data.account.displayName };
+    this.setAccess({ allowed: feature.allowed, entitled: feature.entitled, reason: feature.reason, label: data.account.displayName });
     if (!data.supportedTargets.some(isTarget)) throw new CreatureError("incompatibleSystem");
     if (!feature.allowed) throw new CreatureError(feature.reason);
     return data;

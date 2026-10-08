@@ -54,7 +54,7 @@
     {{#if busy}}<button type="button" data-action="cancel">{{localize "JDRNINJA.button.cancel"}}</button>{{/if}}
     <div class="jdr-ninja__actions">
       <button type="button" data-action="connections">{{localize "JDRNINJA.menu.label"}}</button>
-      <button type="button" data-action="subscription">{{localize "JDRNINJA.overlay.subscription"}}</button>
+      {{#if needsSubscription}}<button type="button" data-action="subscription">{{localize "JDRNINJA.overlay.subscription"}}</button>{{/if}}
     </div>
   </fieldset>
 </div>

@@ -124,6 +124,8 @@ try {
     await page.evaluate(() => game.modules.get("jdr-ninja").api.openConnections());
     const connections = page.locator("#jdr-ninja-connections");
     await connections.waitFor();
+    // A browser without an account keeps one subscription link, in the account section only.
+    assert.equal(await connections.locator('[data-jdr-subscriptions]').count(), 1);
     assert.equal(await connections.locator('[data-jdr-subscriptions="account"]').getAttribute('href'), 'https://www.jdr.ninja/abonnements');
     const compatibility = connections.locator('[data-compatibility="compatible"]');
     assert.equal(await compatibility.count(), 1);
@@ -219,10 +221,12 @@ try {
       await monster.locator('[data-action="check"]').click();
       await page.waitForFunction(() => !foundry.applications.instances.get("jdr-ninja-monsters")._controller);
       assert.equal(await monster.locator("[data-creature-option]").count(), 0);
-      assert.equal(await monster.locator(".fa-gem").count(), 1);
+      assert.equal(await monster.locator(".fa-gem").count(), 0);
       const subscriptions = monster.locator('[data-jdr-subscriptions="creatures"]');
-      assert.equal(await subscriptions.count(), mode === 'ungranted' ? 0 : 1);
-      if (mode !== 'ungranted') assert.equal(await subscriptions.getAttribute('href'), 'https://www.jdr.ninja/abonnements');
+      // Only the server's subscription denial offers the link; a missing permission or API does not.
+      assert.equal(await subscriptions.count(), mode === 'free' ? 1 : 0);
+      if (mode === 'free') assert.equal(await subscriptions.getAttribute('href'), 'https://www.jdr.ninja/abonnements');
+      assert.equal(await monster.locator('[data-action="subscription"]').count(), 0);
       await page.evaluate(async () => { await game.settings.set("jdr-ninja", "creaturesEnabled", false); });
     }
   });

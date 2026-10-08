@@ -1,15 +1,24 @@
 import { MODULE_ID } from "../constants.js";
 import { ACTIONS, FoundryActions } from "../stream-deck/actions.js";
 import { ControlError, requireValue } from "../stream-deck/protocol.js";
-import { keys, plain, validateValue, LIMITS, copy } from "./schema.js";
+import { keys, plain, validateValue, LIMITS, copy, reference } from "./schema.js";
 import { variableService } from "./service.js";
+
+// Only a row value that is itself a reference or a template is resolved; any other value is a literal copied as-is.
+const resolvable = value => reference(value) || value?.source === "template";
+const changeRows = command => command.action === "document.update" && Array.isArray(command.parameters?.changes) ? command.parameters.changes : [];
 
 export function usesVariables(command) {
   if (command.action?.startsWith("variable.")) return true;
   const visit = value => value && typeof value === "object" && (value.source === "variable" || value.source === "template"
     || Array.isArray(value) && value.some(visit));
-  return Object.hasOwn(command.parameters ?? {}, "arguments") || Object.values(command.parameters ?? {}).some(visit);
+  return Object.hasOwn(command.parameters ?? {}, "arguments") || Object.values(command.parameters ?? {}).some(visit)
+    || changeRows(command).some(row => resolvable(row?.value));
 }
+
+/** A companion may only send these once the `updates` extension is negotiated. */
+export const usesUpdates = command => command.action === "document.update"
+  || command.action === "variable.applyAndExecute" && command.parameters?.action?.action === "document.update";
 
 export function validateMacroDeclaration(value) {
   keys(value, ["version", "arguments"]); requireValue(value.version === 1 && Array.isArray(value.arguments) && value.arguments.length <= 16);
@@ -25,10 +34,18 @@ export function validateMacroDeclaration(value) {
 }
 export class VariableActions {
   constructor({ native = new FoundryActions(), variables = variableService } = {}) { Object.assign(this, { native, variables }); }
+  /** Rows keep their literals; a malformed list is left for the native validation to refuse. */
+  async resolveChanges(rows, context) {
+    if (!Array.isArray(rows) || rows.length > ACTIONS["document.update"].inputs.changes.max) return rows;
+    const resolved = [];
+    for (const row of rows) resolved.push(plain(row) && resolvable(row.value) ? { ...row, value: await this.variables.resolveInput(row.value, context) } : row);
+    return resolved;
+  }
   async prepare(command, op, context) {
     const parameters = {}; requireValue(plain(command.parameters));
     for (const [key, value] of Object.entries(command.parameters)) {
       if (key === "arguments" && command.action === "macro.execute") continue;
+      if (key === "changes" && command.action === "document.update") { parameters[key] = await this.resolveChanges(value, op.context); continue; }
       parameters[key] = await this.variables.resolveInput(value, op.context, { formula: command.action === "dice.roll" && key === "formula" });
     }
     op.guard();

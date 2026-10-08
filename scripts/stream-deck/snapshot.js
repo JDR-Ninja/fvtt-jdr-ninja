@@ -11,7 +11,7 @@ const reference = document => ({ uuid: document.uuid, type: documentType(documen
 
 /** Explicit projection only: never serialize a Document, actor system data, journal body or settings. */
 export function buildSnapshot({ game, canvas, ui, config, selectionRevision, overlay,
-  capabilities = { overlay: { verification: "unchecked", entitled: null } }, variables }) {
+  capabilities = { overlay: { verification: "unchecked", entitled: null } }, variables, extensions = {} }) {
   const user = game.user;
   const allowed = document => canObserve(document, user) && (!document.hidden || user.isGM);
   const catalogs = {}, truncated = [];
@@ -64,10 +64,12 @@ export function buildSnapshot({ game, canvas, ui, config, selectionRevision, ove
         current: combat.combatant?.id === combatant.id, defeated: combatant.defeated === true,
         tokenUuid: combatant.token && allowed(combatant.token) ? combatant.token.uuid : null })) } : null;
   const snapshot = {
-    actions: Object.entries(ACTIONS).map(([id, action]) => ({ id, inputs: action.inputs,
-      available: (!action.gm || user.isGM === true) && (id !== "overlay.test"
-        || (overlay?.access().ok === true && capabilities.overlay?.verification === "verified" && capabilities.overlay.entitled === true)),
-      authority: id === "overlay.test" ? "serverEntitlement" : "foundryPermissions" })),
+    // Document updates exist only for a companion that negotiated them; everyone else gets today's list.
+    actions: Object.entries(ACTIONS).filter(([id]) => id !== "document.update" || extensions.updates === 1)
+      .map(([id, action]) => ({ id, ...(id === "document.update" ? { advanced: true } : {}), inputs: action.inputs,
+        available: (!action.gm || user.isGM === true) && (id !== "overlay.test"
+          || (overlay?.access().ok === true && capabilities.overlay?.verification === "verified" && capabilities.overlay.entitled === true)),
+        authority: id === "overlay.test" ? "serverEntitlement" : "foundryPermissions" })),
     catalogs, truncated, capabilities,
     state: { selectionRevision, paused: game.paused === true, sceneUuid: canvas?.scene?.uuid ?? null,
       darkness: finite(canvas?.scene?.environment?.darknessLevel), selected, encounter,
@@ -86,7 +88,7 @@ export function buildSnapshot({ game, canvas, ui, config, selectionRevision, ove
     { id: "variable.applyAndExecute", advanced: true, inputs: { mutations: { type: "mutations", max: 16 }, action: { type: "nativeAction" } }, available: !variables.unavailable, authority: "foundryPermissions" });
     for (const action of snapshot.actions.filter(action => Object.hasOwn(ACTIONS, action.id))) {
       action.inputs = Object.fromEntries(Object.entries(action.inputs).map(([name, input]) => [name, { ...input, variable: true,
-        ...(["string"].includes(input.type) ? { template: true } : {}) }]));
+        ...(["string", "anyDocument", "changes"].includes(input.type) ? { template: true } : {}) }]));
       if (action.id === "macro.execute") action.inputs.arguments = { type: "macroArguments", optional: true, advanced: true };
     }
     catalogs.macroArguments = values(game.macros).filter(m => allowed(m) && m.canExecute && m.type === "script").flatMap(m => {
@@ -95,6 +97,8 @@ export function buildSnapshot({ game, canvas, ui, config, selectionRevision, ove
       catch { return []; }
     }).slice(0, CATALOG_LIMIT);
   }
+  if (extensions.updates === 1) snapshot.capabilities = { ...snapshot.capabilities,
+    updates: { version: 1, operations: ["set", "increment", "decrement", "toggle", "unset"], maxChanges: 16 } };
   // Bound the combined UTF-8 projection as well as each collection (long non-ASCII names cost more).
   const bytes = data => new TextEncoder().encode(JSON.stringify(data)).length;
   while (bytes(snapshot) > MAX_MESSAGE_BYTES - 2048) {

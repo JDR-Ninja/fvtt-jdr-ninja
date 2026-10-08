@@ -49,16 +49,16 @@ function transportFixture(options = {}) {
   const send = async body => bridge.receive({ protocol: 1, sessionId: bridge.session?.id, ...body }, bridge.generation);
   const command = (overrides = {}) => ({ type: "command", protocol: 1, id: "command01", sessionId: bridge.session.id,
     revision: bridge.revision, expiresAt: clock + 10000, action: "game.pause", parameters: { paused: true }, ...overrides });
-  const handshake = async () => {
+  const handshake = async extensions => {
     bridge.refresh(); bridge.ws.onopen();
     const nonce = "b".repeat(64);
     await send({ type: "challenge", nonce,
       proof: await proof(settings.streamDeckKey, "bridge", bridge.session.id, bridge.clientNonce, nonce, webcrypto) });
     assert.equal(sent.at(-1).proof, await proof(settings.streamDeckKey, "foundry", bridge.session.id, bridge.clientNonce, nonce, webcrypto));
-    await send({ type: "authenticated" });
+    await send({ type: "authenticated", ...(extensions ? { extensions } : {}) });
     flushChanges();
   };
-  const ready = async () => { await handshake(); await send({ type: "syncAck", revision: bridge.revision }); };
+  const ready = async extensions => { await handshake(extensions); await send({ type: "syncAck", revision: bridge.revision }); };
   const flushChanges = () => { for (const [id, timer] of timers) if (timer.delay === 150) { timers.delete(id); timer.fn(); } };
   return { ...env, bridge, settings, timers, sent, sockets, calls, command, send, handshake, ready, flushChanges,
     advance: amount => { clock += amount; } };
@@ -604,4 +604,252 @@ test("the real Stream Deck panel template is localized and escapes generated key
     assert(!html.includes('type="checkbox" checked'));
     assert(html.includes('name="streamDeckKey" type="password"'));
   }
+});
+
+class ForcedDeletion {}
+// Same behavior as the V14 helpers the update builder relies on.
+const v14Utils = {
+  getProperty(object, key) {
+    if (!key || !object) return undefined;
+    if (key in object) return object[key];
+    let target = object;
+    for (const part of key.split(".")) {
+      if (!target || (typeof target !== "object" && typeof target !== "function")) return undefined;
+      if (part in target) target = target[part]; else return undefined;
+    }
+    return target;
+  },
+  setProperty(object, key, value) {
+    const parts = key.split("."), last = parts.pop();
+    parts.reduce((target, part) => target[part] ??= {}, object)[last] = value;
+  },
+};
+const UPDATE_CAPABILITY = { version: 1, operations: ["set", "increment", "decrement", "toggle", "unset"], maxChanges: 16 };
+const change = (path, operation, value) => ({ path, operation, ...(value === undefined ? {} : { value }) });
+const updateByteLength = rows => new TextEncoder().encode(JSON.stringify(rows)).length;
+
+function updateFixture() {
+  const f = actionFixture();
+  f.foundry.utils = v14Utils; f.foundry.data = { operators: { ForcedDeletion } };
+  // The prepared `system` of these documents differs from their `_source`, as an Active Effect would make it.
+  const edit = (type, id, source, overrides = {}) => f.add(document(type, id, { _source: source, updates: [], checks: [],
+    canUserModify(user, action, data) { this.checks.push([user, action, data]); return true; },
+    async update(data) { this.updates.push(data); }, ...overrides }));
+  const run = (target, changes, extras) => f.execute("document.update", { document: target, changes }, extras);
+  return { ...f, edit, run };
+}
+
+test("snapshot lists document.update only for a companion that negotiated updates, and nothing else changes", () => {
+  const env = environment(), variables = { variables: [], lists: [], state: [], revisions: { world: 0, personal: 0 }, controller: "gm" };
+  const ids = snapshot => snapshot.actions.map(action => action.id);
+  const legacy = buildSnapshot({ ...env, selectionRevision: 0 });
+  assert.deepEqual(ids(legacy), Object.keys(ACTIONS).filter(id => id !== "document.update"));
+  assert.equal(legacy.capabilities.updates, undefined);
+  for (const extensions of [{}, { variables: 1 }, { updates: 2 }]) {
+    const other = buildSnapshot({ ...env, selectionRevision: 0, extensions, ...(extensions.variables ? { variables } : {}) });
+    assert(!ids(other).includes("document.update")); assert.equal(other.capabilities.updates, undefined);
+  }
+  const capabilities = { overlay: { verification: "unchecked", entitled: null } };
+  const updates = buildSnapshot({ ...env, selectionRevision: 0, capabilities, extensions: { updates: 1 } });
+  assert.deepEqual(updates.actions.find(action => action.id === "document.update"), { id: "document.update", advanced: true,
+    inputs: { document: { type: "anyDocument" }, changes: { type: "changes", max: 16 } }, available: true, authority: "foundryPermissions" });
+  assert.deepEqual(updates.capabilities.updates, UPDATE_CAPABILITY); assert.equal(capabilities.updates, undefined);
+  // Apart from the action and its capability, a peer that negotiated updates sees today's snapshot.
+  updates.actions = updates.actions.filter(action => action.id !== "document.update"); delete updates.capabilities.updates;
+  assert.deepEqual(updates, legacy);
+  assert.deepEqual(ACTIONS["document.update"].inputs, { document: { type: "anyDocument" }, changes: { type: "changes", max: 16 } });
+});
+
+test("with variables also negotiated, document.update accepts variables and templates for its target and changes", () => {
+  const env = environment(), variables = { variables: [], lists: [], state: [], revisions: { world: 0, personal: 0 }, controller: "gm" };
+  const snapshot = buildSnapshot({ ...env, selectionRevision: 0, variables, extensions: { variables: 1, updates: 1 } });
+  const action = snapshot.actions.find(entry => entry.id === "document.update");
+  assert.deepEqual(action, { id: "document.update", advanced: true, available: true, authority: "foundryPermissions",
+    inputs: { document: { type: "anyDocument", variable: true, template: true },
+      changes: { type: "changes", max: 16, variable: true, template: true } } });
+  assert.deepEqual(snapshot.capabilities.updates, UPDATE_CAPABILITY); assert.equal(snapshot.capabilities.variables.version, 1);
+  assert.equal(ACTIONS["document.update"].inputs.document.variable, undefined);
+});
+
+test("hello offers both extensions and authentication keeps each one independently", async () => {
+  const projection = { variables: [], lists: [], state: [], revisions: { world: 0, personal: 0 }, controller: null };
+  for (const [offered, expected] of [[undefined, {}], [{}, {}], [{ variables: 1 }, { variables: 1 }], [{ updates: 1 }, { updates: 1 }],
+    [{ variables: 1, updates: 1 }, { variables: 1, updates: 1 }], [{ variables: true, updates: 2 }, {}]]) {
+    const f = transportFixture({ wire: () => ({ variables: { projection: async () => projection, operation: null } }) });
+    await f.handshake(offered); await settle(() => f.sent.some(message => message.actions));
+    assert.deepEqual(f.sent[0].extensions, { variables: 1, updates: 1 }); assert.deepEqual(f.bridge.extensions, expected);
+    const snapshot = f.sent.findLast(message => message.actions);
+    assert.equal(snapshot.actions.some(action => action.id === "document.update"), expected.updates === 1);
+    assert.deepEqual(snapshot.capabilities.updates, expected.updates === 1 ? UPDATE_CAPABILITY : undefined);
+    assert.equal(snapshot.capabilities.variables !== undefined, expected.variables === 1);
+  }
+});
+
+test("document.update commands, direct or inside applyAndExecute, need the negotiated updates extension", async () => {
+  const parameters = { document: { uuid: "Actor.a" }, changes: [change("system.x", "set", 1)] };
+  const wrapped = { mutations: [{ operation: "toggle", variable: { source: "variable", scope: "world", id: "a" } }],
+    action: { action: "document.update", parameters } };
+  const direct = ["document.update", parameters], combined = ["variable.applyAndExecute", wrapped];
+  for (const [[action, body], negotiated, offered, code] of [
+    [direct, {}, undefined, "unsupportedExtension"], [direct, {}, { updates: 1 }, "unsupportedExtension"],
+    [direct, { updates: 1 }, undefined, "unsupportedExtension"], [direct, { updates: 1 }, { variables: 1 }, "unsupportedExtension"],
+    [direct, { variables: 1 }, { variables: 1, updates: 1 }, "unsupportedExtension"], [direct, { updates: 1 }, { updates: 1 }, "executed"],
+    [combined, { variables: 1 }, { variables: 1 }, "unsupportedExtension"], [combined, { updates: 1 }, { updates: 1 }, "unsupportedExtension"],
+    [combined, { variables: 1 }, { variables: 1, updates: 1 }, "unsupportedExtension"],
+    [combined, { variables: 1, updates: 1 }, { variables: 1 }, "unsupportedExtension"],
+    [combined, { variables: 1, updates: 1 }, { variables: 1, updates: 1 }, "executed"],
+  ]) {
+    const f = transportFixture(); await f.ready(); f.bridge.extensions = negotiated;
+    await f.send(f.command({ id: "update0001", action, parameters: body, ...(offered ? { extensions: offered } : {}) })); await f.bridge.tail;
+    assert.equal(f.sent.at(-1).code, code, JSON.stringify([action, negotiated, offered])); assert.equal(f.calls.length, code === "executed" ? 1 : 0);
+    if (code !== "executed") assert(!f.sent.some(message => message.type === "accepted"));
+  }
+});
+
+test("document.update builds each operation as a nested update from source data and sends it once", async () => {
+  const f = updateFixture(), deep = { list: [1, { nested: null }], text: "é" };
+  const hero = f.edit("Actor", "hero", { system: { hp: { value: 10, max: 20 }, shield: false, note: "old", temp: 3 }, flags: {} },
+    { system: { hp: { value: 999, max: 999 }, shield: true, note: "derived" } });
+  const result = await f.run({ uuid: hero.uuid }, [change("system.hp.value", "increment", 5), change("system.hp.max", "decrement", 0.5),
+    change("system.shield", "toggle"), change("system.note", "set", "new"), change("system.temp", "unset"), change("flags.world.deep", "set", deep)]);
+  assert.equal(result.code, "executed"); assert.equal(hero.updates.length, 1);
+  const [update] = hero.updates;
+  assert.deepEqual(Object.keys(update).sort(), ["flags", "system"]);
+  assert.deepEqual(Object.keys(update.system).sort(), ["hp", "note", "shield", "temp"]);
+  assert.deepEqual(update.system.hp, { value: 15, max: 19.5 }); assert.equal(update.system.shield, true); assert.equal(update.system.note, "new");
+  assert(update.system.temp instanceof ForcedDeletion);
+  assert.deepEqual(update.flags, { world: { deep } }); assert.notEqual(update.flags.world.deep, deep);
+  // Foundry decides on exactly the data it is then given.
+  assert(hero.checks.length > 0 && hero.checks.every(([user, action]) => user === f.game.user && action === "update"));
+  assert.deepEqual(hero.checks.at(-1)[2], update);
+  // Paths missing from the source stay missing: set creates them, unset leaves a deletion, increment refuses.
+  await f.run({ uuid: hero.uuid }, [change("system.absent.deep", "set", 1), change("system.absent2", "unset")]);
+  assert.deepEqual(Object.keys(hero.updates.at(-1).system.absent), ["deep"]);
+  await assert.rejects(f.run({ uuid: hero.uuid }, [change("system.absent.deep", "increment", 1)]), { code: "wrongValueType" });
+  assert.equal(hero.updates.length, 2);
+});
+
+test("document.update stops at Foundry's own update permission and does not ask for observer access", async () => {
+  const f = updateFixture(), seen = []; let allowed = false;
+  const sword = f.edit("Item", "sword", { system: { qty: 1 } }, { testUserPermission: () => false,
+    canUserModify: (user, action, data) => { seen.push([user, action, data]); return allowed; } });
+  const changes = [change("system.qty", "increment", 1)];
+  await assert.rejects(f.run({ uuid: sword.uuid }, changes), { code: "denied" });
+  assert.equal(sword.updates.length, 0); assert.deepEqual(seen, [[f.game.user, "update", { system: { qty: 2 } }]]);
+  allowed = true; assert.equal((await f.run(sword.uuid, changes)).code, "executed");
+  assert.deepEqual(sword.updates, [{ system: { qty: 2 } }]);
+  // A document that cannot answer, or cannot be updated, is refused rather than trusted.
+  sword.canUserModify = undefined; await assert.rejects(f.run(sword.uuid, changes), { code: "denied" });
+  sword.canUserModify = () => true; sword.update = undefined; await assert.rejects(f.run(sword.uuid, changes), { code: "unavailable" });
+  sword.update = async () => {}; sword._source = undefined; await assert.rejects(f.run(sword.uuid, changes), { code: "unavailable" });
+  f.game.user.isGM = false; sword._source = { system: { qty: 1 } }; assert.equal((await f.run(sword.uuid, changes)).code, "executed");
+});
+
+test("document.update reads source numbers and booleans strictly and refuses a non-finite result", async () => {
+  const f = updateFixture();
+  const item = f.edit("Item", "gear", { system: { text: "5", yes: true, zero: 0, big: Number.MAX_VALUE, nothing: null, nested: { n: 1 } } });
+  for (const [row, code] of [[change("system.text", "increment", 1), "wrongValueType"], [change("system.nothing", "decrement", 1), "wrongValueType"],
+    [change("system.missing", "increment", 1), "wrongValueType"], [change("system.yes", "increment", 1), "wrongValueType"],
+    [change("system.nested", "decrement", 1), "wrongValueType"], [change("system.zero", "toggle"), "wrongValueType"],
+    [change("system.text", "toggle"), "wrongValueType"], [change("system.missing", "toggle"), "wrongValueType"],
+    [change("system.big", "increment", Number.MAX_VALUE), "outOfBounds"], [change("system.big", "decrement", -Number.MAX_VALUE), "outOfBounds"]])
+    await assert.rejects(f.run({ uuid: item.uuid }, [row]), { code }, JSON.stringify(row));
+  assert.equal(item.updates.length, 0);
+  await f.run({ uuid: item.uuid }, [change("system.zero", "decrement", 1.5), change("system.yes", "toggle")]);
+  assert.deepEqual(item.updates, [{ system: { zero: -1.5, yes: false } }]);
+});
+
+test("document.update refuses malformed changes before any permission check or update", async () => {
+  const f = updateFixture(), item = f.edit("Item", "gear", { system: {} }), target = { uuid: item.uuid };
+  const set = (value, path = "a") => [{ path, operation: "set", value }];
+  const cases = [undefined, null, "system.a", {}, [], [null], ["system.a"], [[]], Array.from({ length: 17 }, (_, index) => change(`f${index}`, "unset")),
+    [{ operation: "unset" }], [{ path: "a" }], [{ path: 5, operation: "unset" }], [change("", "unset")], [change("a".repeat(257), "unset")],
+    [change("a..b", "unset")], [change(".a", "unset")], [change("a.", "unset")], [change("a.__proto__.b", "unset")],
+    [change("constructor", "unset")], [change("a.prototype", "unset")], [change("a.b", "unset"), change("a.b", "set", 1)],
+    [change("a", "unset"), change("a.b", "unset")], [change("a.b", "unset"), change("a", "unset")],
+    [change("a", "replace")], [{ path: "a", operation: "unset", extra: 1 }], [{ path: "a", operation: "set" }], set(undefined),
+    set(NaN), set(Infinity), set(() => 1), set(new Date()), set({ nested: [undefined] }), set([1, , 2]), set({ map: new Map() }),
+    set(Symbol("a")), set(1n), set(JSON.parse('{"inner":{"__proto__":{"polluted":true}}}')), set(Object.create({ inherited: 1 })),
+    [{ path: "a", operation: "increment" }], [change("a", "increment", "1")], [change("a", "increment", NaN)],
+    [change("a", "decrement", Infinity)], [change("a", "increment", null)], [change("a", "decrement", true)],
+    [{ path: "a", operation: "toggle", value: true }], [{ path: "a", operation: "unset", value: null }]];
+  for (const [index, changes] of cases.entries()) await assert.rejects(f.run(target, changes), error => {
+    assert.equal(error.code, "invalidParameters", `case ${index}`); return true; });
+  assert.equal(item.checks.length, 0); assert.equal(item.updates.length, 0);
+  // Exactly the allowed shapes pass, including every JSON value kind.
+  await f.run(target, [...["string", 0, -1.5, true, false, null, [], {}, [1, [2, { a: null }]], { a: { b: [true] } }].map((value, index) => set(value, `v${index}`)[0]),
+    change("x.y", "unset")]);
+  assert.equal(item.updates.length, 1);
+});
+
+test("document.update bounds the serialized changes, including hostile depth and cycles", async () => {
+  const f = updateFixture(), item = f.edit("Item", "gear", { system: {} }), target = { uuid: item.uuid };
+  const room = 65536 - updateByteLength([change("a", "set", "")]);
+  await f.run(target, [change("a", "set", "x".repeat(room))]); assert.equal(item.updates.length, 1);
+  const cycle = {}; cycle.self = cycle; const nest = levels => { let value = []; for (let level = 0; level < levels; level++) value = [value]; return value; };
+  for (const value of ["x".repeat(room + 1), "é".repeat(room / 2 + 1), Array.from({ length: 70000 }, () => 1), cycle, nest(60000), nest(100000)])
+    await assert.rejects(f.run(target, [change("a", "set", value)]), { code: "capacity" });
+  assert.equal(item.updates.length, 1);
+});
+
+test("document.update targets any document type through a UUID string, a UUID object or an assigned character", async () => {
+  const f = updateFixture(), changes = [change("name", "set", "Renamed")];
+  const hero = f.edit("Actor", "hero", { name: "Hero" }), sword = f.edit("Item", "sword", { name: "Sword" });
+  const folder = f.edit("Folder", "folder", { name: "Folder" }), scene = f.edit("Scene", "scene", { name: "Scene" });
+  f.game.users = collection([{ id: "player", character: hero }]);
+  for (const [target, doc] of [[hero.uuid, hero], [{ uuid: sword.uuid }, sword], [folder.uuid, folder], [{ uuid: scene.uuid }, scene],
+    [{ source: "userCharacter", userId: "player" }, hero]]) {
+    const before = doc.updates.length; await f.run(target, changes);
+    assert.equal(doc.updates.length, before + 1, JSON.stringify(target));
+  }
+  for (const [target, code] of [["Item.absent", "missingDocument"], [{ uuid: "Item.absent" }, "missingDocument"], ["x".repeat(512), "missingDocument"],
+    [{ source: "userCharacter", userId: "absent" }, "missingDocument"], ["x".repeat(513), "invalidParameters"], ["", "invalidParameters"],
+    [5, "invalidParameters"], [null, "invalidParameters"], [undefined, "invalidParameters"], [[], "invalidParameters"], [{}, "invalidParameters"],
+    [{ uuid: "" }, "invalidParameters"], [{ uuid: sword.uuid, extra: true }, "invalidParameters"], [{ uuid: 5 }, "invalidParameters"],
+    [{ source: "selectedToken", uuid: sword.uuid }, "invalidParameters"], [{ source: "selectedTokenActor", extra: 1 }, "invalidParameters"],
+    [{ source: "userCharacter" }, "invalidParameters"], [{ source: "userCharacter", userId: "player", uuid: "x" }, "invalidParameters"],
+    [{ source: "unknown" }, "invalidParameters"], [{ source: "variable", scope: "world", id: "x" }, "invalidParameters"]])
+    await assert.rejects(f.run(target, changes), { code }, JSON.stringify(target));
+  assert.equal(hero.updates.length + sword.updates.length, 3);
+});
+
+test("document.update resolves the selected token or its actor under the same single-selection rules", async () => {
+  const f = updateFixture(), changes = [change("name", "set", "Renamed")];
+  const actor = f.edit("Actor", "synthetic", { name: "Actor" }), token = f.edit("Token", "one", { name: "Token" }, { actor });
+  const other = f.edit("Token", "two", { name: "Other" }, { actor: f.edit("Actor", "second", { name: "Second" }) });
+  f.canvas.tokens.controlled = [{ document: token }];
+  await f.run({ source: "selectedToken" }, changes); await f.run({ source: "selectedTokenActor" }, changes);
+  assert.equal(token.updates.length, 1); assert.equal(actor.updates.length, 1);
+  await assert.rejects(f.run({ source: "selectedTokenActor" }, changes, { selectionRevision: 4 }), { code: "staleSelection" });
+  await assert.rejects(f.run({ source: "selectedToken" }, changes, { selectionRevision: 4 }), { code: "staleSelection" });
+  token.actor = null; await assert.rejects(f.run({ source: "selectedTokenActor" }, changes), { code: "missingDocument" }); token.actor = actor;
+  f.canvas.tokens.controlled = [{ document: token }, { document: other }];
+  for (const source of ["selectedToken", "selectedTokenActor"]) await assert.rejects(f.run({ source }, changes), { code: "ambiguousTarget" });
+  f.canvas.tokens.controlled = [];
+  for (const source of ["selectedToken", "selectedTokenActor"]) await assert.rejects(f.run({ source }, changes), { code: "ambiguousTarget" });
+  // The selection or the token's actor changing between preparation and dispatch never retargets the update.
+  for (const [source, retarget] of [["selectedToken", () => { f.canvas.tokens.controlled = [{ document: other }]; }],
+    ["selectedTokenActor", () => { f.canvas.tokens.controlled = [{ document: other }]; }], ["selectedTokenActor", () => { token.actor = other.actor; }]]) {
+    f.canvas.tokens.controlled = [{ document: token }]; token.actor = actor; let guards = 0;
+    await assert.rejects(f.run({ source }, changes, { guard: () => { if (++guards === 3) retarget(); } }), { code: "staleSelection" });
+  }
+  assert.equal(token.updates.length + other.updates.length + actor.updates.length + other.actor.updates.length, 2);
+});
+
+test("document.update rebuilds its update from the current source and permission right before sending", async () => {
+  const f = updateFixture(), changes = [change("system.hp", "increment", 1)];
+  const hero = f.edit("Actor", "hero", { system: { hp: 1 } });
+  const prepared = await f.actions.prepare({ action: "document.update", parameters: { document: hero.uuid, changes }, selectionRevision: 5 },
+    { selectionRevision: () => 5 });
+  assert.equal(hero.updates.length, 0); hero._source.system.hp = 40;
+  await f.actions.dispatch(prepared, { selectionRevision: () => 5 });
+  assert.deepEqual(hero.updates, [{ system: { hp: 41 } }]); assert.notEqual(hero.updates[0], hero.checks[0][2]);
+  hero._source.system.hp = "broken"; await assert.rejects(f.actions.dispatch(prepared, { selectionRevision: () => 5 }), { code: "wrongValueType" });
+  hero._source.system.hp = 2; hero.canUserModify = () => false;
+  await assert.rejects(f.actions.dispatch(prepared, { selectionRevision: () => 5 }), { code: "denied" });
+  assert.equal(hero.updates.length, 1);
+  // A confirmation binds a UUID string to the very same document.
+  hero.canUserModify = () => true; await f.actions.confirmed(prepared, () => {});
+  f.documents.set(hero.uuid, document("Actor", "other"));
+  await assert.rejects(f.actions.confirmed(prepared, () => {}), { code: "missingDocument" });
 });

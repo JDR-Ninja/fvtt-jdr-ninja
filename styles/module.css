@@ -31,6 +31,8 @@
 .jdr-ninja .jn-variables label input:not([type="checkbox"]), .jdr-ninja .jn-variables label select, .jdr-ninja .jn-variables textarea { flex: 1 1 12rem; width: 100%; min-width: 0; }
 .jdr-ninja .jn-variables fieldset { min-width: 0; margin-block: 0.5rem; }
 .jdr-ninja .jn-variables pre { overflow: auto; }
+/* Core styles inline code as a no-wrap chip: a code sample keeps its lines and wraps inside the window. */
+.jdr-ninja .jn-variables pre code { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
 .jdr-ninja .jn-variable-inline > select { flex: 1; min-width: 0; }
 .jdr-ninja .jn-variables [hidden] { display: none; }
 @media (max-width: 680px) { .jdr-ninja .jn-variable-columns { grid-template-columns: 1fr; } }

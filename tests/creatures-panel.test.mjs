@@ -18,7 +18,7 @@ globalThis.game = { ...gameFixture(), i18n: { localize: key => key, format: key 
 globalThis.ui = { notifications: { warn() {} } };
 const { MonsterGeneratorPanel, NpcGeneratorPanel } = await import("../scripts/creatures/panel.js");
 
-test("the two native panels cover all fields, NPC advanced options remain visible and premium marker persists", async () => {
+test("the two native panels cover all fields, NPC advanced options remain visible and no premium marker shows", async () => {
   const template = await readFile(new URL("../templates/creatures.hbs", import.meta.url), "utf8");
   for (const locale of ["en", "fr", "es", "de", "it"]) {
     const strings = JSON.parse(await readFile(new URL(`../lang/${locale}.json`, import.meta.url), "utf8"));
@@ -31,7 +31,7 @@ test("the two native panels cover all fields, NPC advanced options remain visibl
       panel._name = '<img src=x onerror="unsafe()">';
       creatureClient.access = { allowed: true, entitled: true }; creatureClient.cooldownUntil = 0;
       const context = await panel._prepareContext(), html = renderer.compile(template)(context);
-      assert(!html.includes("JDRNINJA.")); assert(html.includes("fa-gem"));
+      assert(!html.includes("JDRNINJA.")); assert(!html.includes("fa-gem"));
       assert(!html.includes('data-jdr-subscriptions='));
       assert(html.includes('data-compatibility="compatible"'));
       assert(html.includes(Handlebars.escapeExpression(strings['JDRNINJA.creatures.compatibility.compatible'])));
@@ -48,7 +48,7 @@ test("the two native panels cover all fields, NPC advanced options remain visibl
   }
 });
 
-test("both generators offer a direct subscription link for missing authentication, unknown access and subscription denial", async () => {
+test("both generators offer the subscription link only after a subscription denial, never as a standing button", async () => {
   const savedGame = game, savedAccess = creatureClient.access;
   const strings = JSON.parse(await readFile(new URL('../lang/fr.json', import.meta.url), 'utf8'));
   const renderer = Handlebars.create(); renderer.registerHelper('localize', key => strings[key] ?? key);
@@ -56,9 +56,10 @@ test("both generators offer a direct subscription link for missing authenticatio
   try {
     globalThis.game = { ...gameFixture(), folders: { contents: [] }, i18n: savedGame.i18n };
     for (const [token, access, error, expected] of [
-      ['', null, '', true], ['fixture-token', null, '', true],
+      ['', null, '', false], ['fixture-token', null, '', false],
       ['fixture-token', { entitled: false, reason: 'tierRequired' }, '', true],
-      ['fixture-token', { entitled: true, allowed: true }, 'unauthorized', true],
+      ['fixture-token', null, 'tierRequired', true],
+      ['fixture-token', { entitled: true, allowed: true }, 'unauthorized', false],
       ['fixture-token', { entitled: true, allowed: false, reason: 'devicePermissionRequired' }, '', false],
       ['fixture-token', { entitled: true, allowed: true }, '', false],
     ]) {
@@ -68,6 +69,7 @@ test("both generators offer a direct subscription link for missing authenticatio
         const context = await panel._prepareContext(), html = render(context);
         assert.equal(context.showSubscriptionLink, expected);
         assert.equal(html.includes('data-jdr-subscriptions="creatures"'), expected);
+        assert(!html.includes('data-action="subscription"'));
         if (expected) assert(html.includes('href="https://www.jdr.ninja/abonnements" target="_blank" rel="noopener noreferrer"'));
         assert(!JSON.stringify(context).includes('fixture-token'));
       }

@@ -4,7 +4,7 @@ import { webcrypto } from "node:crypto";
 import { emptyStore, validateStore, readStore, validateValue, uuid7, copy, preview, validateProjectionCapacity } from "../scripts/variables/schema.js";
 import { parseExpression, inspectExpression } from "../scripts/variables/expressions.js";
 import { VariableService } from "../scripts/variables/service.js";
-import { VariableActions, validateMacroDeclaration } from "../scripts/variables/dispatcher.js";
+import { VariableActions, validateMacroDeclaration, usesVariables, usesUpdates } from "../scripts/variables/dispatcher.js";
 import { FoundryActions } from "../scripts/stream-deck/actions.js";
 
 const ref = (id, scope = "world") => ({ source: "variable", scope, id });
@@ -223,4 +223,99 @@ test("compatible script macros receive detached typed arguments, cannot reenter 
   await actions.execute(command("macro.execute", { document: { uuid: macro.uuid }, arguments: { amount: ref("n") } })); assert.deepEqual(got.arguments, { amount: 4 });
   macro.execute = async () => undefined; await assert.rejects(actions.execute(command("macro.execute", { document: { uuid: macro.uuid }, arguments: { amount: 2 } })), { code: "uncertain" });
   assert.throws(() => validateMacroDeclaration({ version: 1, arguments: [{ name: "constructor", type: "number", required: false }] }));
+});
+
+class ForcedDeletion {}
+const mirror = { getProperty: (object, key) => key.split(".").reduce((target, part) => target?.[part], object),
+  setProperty: (object, key, value) => { const parts = key.split("."), last = parts.pop(); parts.reduce((target, part) => target[part] ??= {}, object)[last] = value; } };
+const change = (path, operation, value) => ({ path, operation, ...(value === undefined ? {} : { value }) });
+const template = (...segments) => ({ source: "template", segments });
+/** Real native handlers over the variable fixture, with documents whose source data differs from what a sheet shows. */
+function updateFixture(f) {
+  const updates = [], foundry = { utils: mirror, data: { operators: { ForcedDeletion } } };
+  const target = (uuid, type, source) => { const doc = { uuid, documentName: type, testUserPermission: () => true, _source: source,
+    canUserModify: () => true, update: async data => { updates.push([uuid, data]); } }; f.documents.set(uuid, doc); return doc; };
+  const native = new FoundryActions({ game: () => f.game, canvas: () => f.canvas, ui: () => ({}), foundry: () => foundry, resolveUuid: async uuid => f.documents.get(uuid) });
+  return { actions: new VariableActions({ native, variables: f.service }), updates, target };
+}
+test("document.update rows resolve variables and templates with their types, and keep every other value as a literal", async () => {
+  const f = fixture(), u = updateFixture(f);
+  u.target("Item.sword", "Item", { system: { qty: 3, bonus: 10, equipped: false } });
+  f.add(variable("n", "number", 7)); f.add(variable("b", "boolean", true)); f.add(variable("s", "text", "Hello")); f.add(variable("where", "text", "Item.sword"));
+  const literal = { keep: [1, "two", { three: null }], text: "x" };
+  const result = await u.actions.execute(command("document.update", { document: ref("where"), changes: [
+    change("system.qty", "set", ref("n")), change("system.flag", "set", ref("b")), change("system.label", "set", ref("s")),
+    change("system.title", "set", template({ text: "Sword #" }, { variable: ref("n") })), change("system.bonus", "increment", ref("n")),
+    change("system.equipped", "set", literal), change("system.list", "set", [ref("n")]), change("system.nothing", "unset")] }));
+  assert.equal(result.code, "executed"); assert.equal(u.updates.length, 1); assert.equal(u.updates[0][0], "Item.sword");
+  const update = u.updates[0][1];
+  assert.deepEqual(update.system.qty, 7); assert.equal(update.system.flag, true); assert.equal(update.system.label, "Hello");
+  assert.equal(update.system.title, "Sword #7"); assert.equal(update.system.bonus, 17);
+  assert.deepEqual(update.system.equipped, literal); assert.notEqual(update.system.equipped, literal);
+  assert.deepEqual(update.system.list, [ref("n")]); assert(update.system.nothing instanceof ForcedDeletion);
+  assert.equal(f.writes(), 0);
+});
+test("document.update targets resolve from a text variable, a template or a document variable", async () => {
+  const f = fixture(), u = updateFixture(f), changes = [change("name", "set", "Renamed")];
+  u.target("Item.sword", "Item", { name: "Sword" }); u.target("Actor.hero", "Actor", { name: "Hero" });
+  f.add(variable("sword", "text", "Item.sword")); f.add(variable("part", "text", "sword")); f.add(variable("hero", "Actor", { uuid: "Actor.hero" }));
+  for (const [document, uuid] of [[ref("sword"), "Item.sword"], [template({ text: "Item." }, { variable: ref("part") }), "Item.sword"],
+    [ref("hero"), "Actor.hero"], [{ uuid: "Item.sword" }, "Item.sword"], ["Actor.hero", "Actor.hero"]]) {
+    u.updates.length = 0; await u.actions.execute(command("document.update", { document, changes })); assert.deepEqual(u.updates, [[uuid, { name: "Renamed" }]]);
+  }
+  await assert.rejects(u.actions.execute(command("document.update", { document: ref("absent"), changes })), { code: "missingVariable" });
+  f.add(variable("gone", "text", "Item.gone")); await assert.rejects(u.actions.execute(command("document.update", { document: ref("gone"), changes })), { code: "missingDocument" });
+  f.add(variable("amount", "number", 3)); await assert.rejects(u.actions.execute(command("document.update", { document: ref("amount"), changes })), { code: "invalidParameters" });
+  assert.equal(u.updates.length, 1);
+});
+test("document.update never coerces a resolved row value and reports the row that does not fit its operation", async () => {
+  const f = fixture(), u = updateFixture(f), at = (...rows) => command("document.update", { document: "Item.sword", changes: rows });
+  u.target("Item.sword", "Item", { system: { qty: 1, on: true } });
+  f.add(variable("s", "text", "5")); f.add(variable("b", "boolean", true)); f.add(variable("n", "number", 2));
+  for (const [row, code] of [[change("system.qty", "increment", ref("s")), "invalidParameters"], [change("system.qty", "decrement", ref("b")), "invalidParameters"],
+    [change("system.on", "toggle", ref("b")), "invalidParameters"], [change("system.on", "increment", ref("n")), "wrongValueType"],
+    [change("system.qty", "set", ref("absent")), "missingVariable"], [change("system.qty", "set", { source: "variable", scope: "world", id: "n", extra: 1 }), "invalidParameters"],
+    [change("system.qty", "set", template({ variable: ref("absent") })), "missingVariable"]])
+    await assert.rejects(u.actions.execute(at(row)), { code }, JSON.stringify(row));
+  assert.equal(u.updates.length, 0);
+  await assert.rejects(u.actions.execute(command("document.update", { document: "Item.sword", changes: "system.qty" })), { code: "invalidParameters" });
+  await assert.rejects(u.actions.execute(command("document.update", { document: "Item.sword", changes: Array.from({ length: 17 }, (_, index) => change(`f${index}`, "set", ref("n"))) })),
+    { code: "invalidParameters" });
+  assert.equal((await u.actions.execute(at(change("system.qty", "increment", 1)))).code, "executed");
+});
+test("variable detection sees reference and template values inside document.update rows, and nowhere else", () => {
+  const rows = value => ({ action: "document.update", parameters: { document: "Item.a", changes: [change("a", "set", 1), change("b", "set", value)] } });
+  assert.equal(usesVariables(rows(1)), false); assert.equal(usesVariables(rows({ nested: [1] })), false);
+  assert.equal(usesVariables(rows(ref("n"))), true); assert.equal(usesVariables(rows(template({ text: "x" }))), true);
+  // A reference inside a literal array or object is data to write, not something to resolve.
+  assert.equal(usesVariables(rows([ref("n")])), false); assert.equal(usesVariables(rows({ inner: ref("n") })), false);
+  assert.equal(usesVariables({ action: "document.update", parameters: { document: ref("d"), changes: [] } }), true);
+  assert.equal(usesVariables({ action: "document.update", parameters: { document: "Item.a", changes: [null, "text", { value: ref("n") }] } }), true);
+  assert.equal(usesVariables({ action: "document.update", parameters: { document: "Item.a", changes: { value: ref("n") } } }), false);
+  assert.equal(usesVariables({ action: "chat.send", parameters: { changes: [change("a", "set", ref("n"))] } }), false);
+  assert.equal(usesVariables({ action: "document.update", parameters: { document: "Item.a" } }), false);
+  assert.equal(usesUpdates({ action: "document.update", parameters: {} }), true);
+  assert.equal(usesUpdates({ action: "variable.applyAndExecute", parameters: { action: { action: "document.update", parameters: {} } } }), true);
+  for (const candidate of [{ action: "variable.applyAndExecute", parameters: { action: { action: "game.pause" } } },
+    { action: "variable.applyAndExecute", parameters: {} }, { action: "game.pause", parameters: { action: { action: "document.update" } } }, { action: "variable.set", parameters: {} }])
+    assert.equal(usesUpdates(candidate), false);
+});
+test("document.update inside applyAndExecute commits the variable once and updates with the candidate value", async () => {
+  const f = fixture(), u = updateFixture(f);
+  u.target("Item.sword", "Item", { system: { on: false, qty: 4 } });
+  f.add(variable("b", "boolean", false)); f.add(variable("n", "number", 5));
+  const result = await u.actions.execute(command("variable.applyAndExecute", { mutations: [{ operation: "toggle", variable: ref("b") }, { operation: "increment", variable: ref("n"), amount: 2 }],
+    action: { action: "document.update", parameters: { document: "Item.sword", changes: [change("system.on", "set", ref("b")), change("system.qty", "increment", ref("n"))] } } }));
+  assert.equal(result.code, "executed"); assert.equal(result.details.variableCommit, "committed"); assert.equal(result.details.execution, "completed");
+  assert.equal(f.writes(), 1); assert.deepEqual(u.updates, [["Item.sword", { system: { on: true, qty: 11 } }]]);
+  // An update Foundry refuses only after the variable was committed leaves it committed and reports the child as not started.
+  let asked = 0; u.target("Item.sword", "Item", { system: { on: false, qty: 4 } }).canUserModify = () => ++asked === 1;
+  const refused = await u.actions.execute(command("variable.applyAndExecute", { mutations: [{ operation: "toggle", variable: ref("b") }],
+    action: { action: "document.update", parameters: { document: "Item.sword", changes: [change("system.on", "set", ref("b"))] } } }));
+  assert.deepEqual([refused.code, refused.details.variableCommit, refused.details.execution], ["partial", "committed", "notStarted"]);
+  assert.equal(u.updates.length, 1); assert.equal(f.writes(), 2);
+  // One refused during preparation stops the whole command before the variable is touched.
+  await assert.rejects(u.actions.execute(command("variable.applyAndExecute", { mutations: [{ operation: "toggle", variable: ref("b") }],
+    action: { action: "document.update", parameters: { document: "Item.sword", changes: [change("system.on", "set", ref("b"))] } } })), { code: "denied" });
+  assert.equal(f.writes(), 2);
 });
