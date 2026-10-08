@@ -1,6 +1,6 @@
 // Reproducible README screenshots: a disposable dnd5e world on the local Foundry, the JDR Ninja API answered from
 // showcase fixtures and a fake Stream Deck companion. No request leaves the machine.
-// Usage: npm run screenshots -- [--lang=en|fr|es|de|it] [--out=<directory>]
+// Usage: npm run screenshots -- [--lang=en|fr|es|de|it] [--theme=dark|light] [--out=<directory>]
 import assert from "node:assert/strict";
 import { createConnection } from "node:net";
 import { createHmac, randomBytes } from "node:crypto";
@@ -14,11 +14,15 @@ import { chromium } from "playwright";
 import { ACCOUNT_NAME, ATLAS_WORLD, HEROES, MACRO, atlas, capabilities, monsterCatalog, monsterResult,
   overlayDiagnostics, worldVariables } from "./readme-fixtures.mjs";
 
-const { values: args } = parseArgs({ options: { lang: { type: "string", default: "en" }, out: { type: "string" } } });
+const { values: args } = parseArgs({ options: { lang: { type: "string", default: "en" }, theme: { type: "string", default: "dark" },
+  out: { type: "string" } } });
 const LANGUAGES = { en: "en-US", fr: "fr-FR", es: "es-ES", de: "de-DE", it: "it-IT" };
 assert(Object.hasOwn(LANGUAGES, args.lang), `--lang must be one of ${Object.keys(LANGUAGES).join(", ")}`);
+assert(["dark", "light"].includes(args.theme), "--theme must be one of dark, light");
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const outDir = resolve(args.out ?? join(root, "docs/images", args.lang === "en" ? "" : args.lang));
+// Light captures go to their own folder so the dark README images are never overwritten.
+const themeDir = args.theme === "light" ? "light" : "";
+const outDir = resolve(args.out ?? join(root, "docs/images", args.lang === "en" ? "" : args.lang, themeDir));
 const home = resolve(process.env.FOUNDRY_HOME ?? "C:/github/FoundryWorkshop/FoundryVTT-Portable-14.365");
 const tool = resolve(process.env.FOUNDRY_TOOL ?? "C:/github/FoundryWorkshop/tools/foundry.mjs");
 const port = Number(process.env.FOUNDRY_PORT ?? 30000);
@@ -158,7 +162,7 @@ try {
 
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1600, height: 1800 }, deviceScaleFactor: 1,
-    locale: LANGUAGES[args.lang], timezoneId: "UTC", colorScheme: "dark" });
+    locale: LANGUAGES[args.lang], timezoneId: "UTC", colorScheme: args.theme });
   await context.addInitScript(language => {
     // The welcome tour pans a canvas that noCanvas never creates; marking it started keeps it closed.
     for (const [key, value] of [["core.noCanvas", true], ["core.performanceMode", 0], ["core.maxFPS", 10], ["core.language", language],
@@ -187,8 +191,9 @@ try {
   await page.waitForFunction(() => globalThis.game?.ready && game.modules.get("jdr-ninja")?.api?.openConnections, null, { timeout: 45000 });
   assert.equal(await page.evaluate(() => game.i18n.lang), args.lang);
 
-  // A plain backdrop, no pause banner and no toasts over the windows.
-  await page.addStyleTag({ content: "body { background: #17161c !important; } #notifications, #pause { display: none !important; }"
+  // A plain backdrop matching the theme, no pause banner and no toasts over the windows.
+  const backdrop = args.theme === "light" ? "#e9e6df" : "#17161c";
+  await page.addStyleTag({ content: `body { background: ${backdrop} !important; } #notifications, #pause { display: none !important; }`
     + " body.jn-window-capture #interface { visibility: hidden; }" });
   const seeded = await page.evaluate(async ({ heroes, macro }) => {
     if (game.paused) game.togglePause(false, { broadcast: true });
@@ -202,6 +207,11 @@ try {
   }, { heroes: HEROES, macro: MACRO });
   assert.equal(seeded.actors, HEROES.length);
   await page.evaluate(store => game.settings.set("jdr-ninja", "variablesWorld", store), worldVariables(seeded.user, seeded.hero));
+  // The Gamemaster's color scheme. core.uiConfig applies live (its onChange calls game.configureUI), so no reload is needed.
+  await page.evaluate(async theme => {
+    const ui = game.settings.get("core", "uiConfig");
+    await game.settings.set("core", "uiConfig", { ...ui, colorScheme: { ...ui.colorScheme, applications: theme, interface: theme } });
+  }, args.theme);
 
   // Connections: pair the account with the creature permission, then enable each integration through its own control.
   await page.evaluate(() => game.modules.get("jdr-ninja").api.openConnections());
@@ -234,7 +244,7 @@ try {
   await page.waitForFunction(() => game.modules.get("jdr-ninja").api.streamDeck.status().state === "ready");
   await page.evaluate(() => foundry.applications.instances.get("jdr-ninja-connections").render());
   // The account, creature and Atlas sections; the window keeps the rest scrollable.
-  await capture(connections, "connections", { height: 1180 });
+  await capture(connections, "connections", { height: "auto" });
   await page.evaluate(() => game.modules.get("jdr-ninja").api.openStreamDeck());
   await capture(streamDeck, "stream-deck");
 

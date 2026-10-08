@@ -181,7 +181,7 @@ try {
     const value = await gm.evaluate(async id => game.modules.get("jdr-ninja").api.variables.read({ source: "variable", scope: "world", id }), variableId); assert.equal(value, 9);
     await gm.evaluate(() => { game.modules.get("jdr-ninja").api.openVariables(); }); await gm.locator("#jdr-ninja-variables").waitFor();
     await gm.locator('#jdr-ninja-variables [data-action="scope"][data-value="world"]').click({ noWaitAfter: true });
-    await gm.locator('#jdr-ninja-variables [data-action="scope"][data-value="world"][aria-pressed="true"]').waitFor();
+    await gm.locator('#jdr-ninja-variables [data-action="scope"][data-value="world"][aria-selected="true"]').waitFor();
     await gm.locator(`#jdr-ninja-variables [data-action="select"][data-id="${variableId}"]`).click(); return { value };
   });
   await cases("French editor light/dark layouts and keyboard fields", async () => {

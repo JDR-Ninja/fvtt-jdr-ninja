@@ -9,6 +9,41 @@ import { systemGuard, guardMessage } from "./system-guard.js";
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const L = key => game.i18n.localize(`JDRNINJA_ATLAS_SYNC.${key}`);
 
+const ROW_LABELS = { synced: "JDRNINJA_ATLAS_SYNC.row.synced", linked: "JDRNINJA_ATLAS_SYNC.row.linked",
+  unlinked: "JDRNINJA_ATLAS_SYNC.row.unlinked" };
+const CONNECTION_LABELS = { connected: "JDRNINJA.status.connected", loading: "JDRNINJA_ATLAS_SYNC.app.loading",
+  disconnected: "JDRNINJA_ATLAS_SYNC.app.disconnected" };
+
+/**
+ * The pill of a character row, from its link alone: synced (with a date), linked but never synced, or not linked.
+ * Levels are the shared pill levels: `success`, `warning`, `error`, `info` and `neutral`.
+ */
+export function rowStatus({ linked, synced }) {
+  if (!linked) return { state: "unlinked", level: "neutral", icon: "fa-link-slash" };
+  if (synced) return { state: "synced", level: "success", icon: "fa-circle-check" };
+  return { state: "linked", level: "info", icon: "fa-link" };
+}
+
+/** The pill of the connection to Atlas, in the window header. `failed` means the last request came back with an error. */
+export function connectionStatus({ connected, loading, failed }) {
+  if (connected) return { state: "connected", level: "success", icon: "fa-circle-check" };
+  if (loading) return { state: "loading", level: "info", icon: "fa-spinner fa-spin" };
+  return { state: "disconnected", level: failed ? "error" : "neutral", icon: "fa-circle-xmark" };
+}
+
+/**
+ * A sync date in Foundry's language, short and without seconds (for instance "Oct 8, 2026, 7:30 PM" in English).
+ * Returns null for a missing or unreadable date, so the row shows no date instead of "Invalid Date".
+ */
+export function formatSyncedAt(value, locale, { timeZone } = {}) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const options = { dateStyle: "medium", timeStyle: "short", ...(timeZone ? { timeZone } : {}) };
+  try { return new Intl.DateTimeFormat(locale, options).format(date); }
+  catch { return new Intl.DateTimeFormat(undefined, options).format(date); }
+}
+
 export class AtlasSyncApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static _instance = null;
   static DEFAULT_OPTIONS = {
@@ -24,10 +59,12 @@ export class AtlasSyncApp extends HandlebarsApplicationMixin(ApplicationV2) {
       syncAll: AtlasSyncApp.prototype._onSyncAll,
     },
   };
-  static PARTS = { body: { template: `modules/${MODULE_ID}/templates/atlas-sync.hbs`, scrollable: [".atlas-sync__rows"] } };
+  static PARTS = { body: { template: `modules/${MODULE_ID}/templates/atlas-sync.hbs`, scrollable: [".jn-scroll"] } };
   _data = { loading: true, whoami: null, campaigns: [], error: null };
   /** actorId → the warning shown on that row: a failed sync, or a sync that left the portrait out. */
   _syncErrors = new Map();
+  /** actorId → the level of that row's message: `error` for a failed sync, `warning` for a portrait left out. */
+  _syncLevels = new Map();
   _busy = false;
   _closed = false;
 
@@ -67,7 +104,7 @@ export class AtlasSyncApp extends HandlebarsApplicationMixin(ApplicationV2) {
   loadData() {
     return this._perform(async stamp => {
       this._data = { loading: true, whoami: null, campaigns: [], error: null };
-      this._syncErrors.clear();
+      this._forgetRowMessages();
       const who = await AtlasApi.whoami();
       if (!who.ok) { this._data = { loading: false, whoami: null, campaigns: [], error: who.status }; return; }
       if (!canContinue(stamp).ok || this._closed) return;
@@ -88,14 +125,18 @@ export class AtlasSyncApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const selected = this.selectedCampaignId;
     const rows = game.actors.filter(a => a.type === "character").map(actor => {
       const link = getLink(actor);
+      const syncedLabel = formatSyncedAt(link?.syncedAtUtc, game.i18n.lang);
+      const status = rowStatus({ linked: Boolean(link?.atlasCharacterId), synced: syncedLabel !== null });
       return { actorId: actor.id, name: actor.name, img: actor.img, linked: Boolean(link?.atlasCharacterId),
-        syncedLabel: link?.syncedAtUtc ? new Date(link.syncedAtUtc).toLocaleString() : null,
-        error: this._syncErrors.get(actor.id) ?? null };
+        status: { ...status, label: game.i18n.localize(ROW_LABELS[status.state]) }, syncedLabel,
+        error: this._syncErrors.get(actor.id) ?? null, errorLevel: this._syncLevels.get(actor.id) ?? "warning" };
     });
+    const connection = connectionStatus({ connected: Boolean(data.whoami), loading: data.loading, failed: Boolean(data.error) });
     return {
       guardMessage: !guard.ok ? guardMessage(guard) : !access.ok ? localizeStatus(access.status) : null,
       loading: data.loading, busy: this._busy,
       error: data.error ? localizeStatus(data.error) : null,
+      connection: { ...connection, label: game.i18n.localize(CONNECTION_LABELS[connection.state]) },
       connected: Boolean(data.whoami), worldName: data.whoami?.world?.name ?? "",
       tierAllowed: data.whoami?.tier?.allowed === true,
       systemLabel: `${game.system.title ?? game.system.id} · v${game.system.version}`,
@@ -129,8 +170,17 @@ export class AtlasSyncApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /** Records the row warning for a sync result: its error, a portrait left out, or nothing. */
   _recordRowResult(actor, result) {
     const message = result.ok ? portraitMessage(result) : resultMessage(result);
-    if (message) this._syncErrors.set(actor.id, message);
-    else this._syncErrors.delete(actor.id);
+    if (message) {
+      this._syncErrors.set(actor.id, message);
+      this._syncLevels.set(actor.id, result.ok ? "warning" : "error");
+    } else this._forgetRowMessages(actor.id);
+  }
+
+  /** Drops the message of one row, or of every row. */
+  _forgetRowMessages(actorId) {
+    if (actorId === undefined) { this._syncErrors.clear(); this._syncLevels.clear(); return; }
+    this._syncErrors.delete(actorId);
+    this._syncLevels.delete(actorId);
   }
 
   _onSync(_event, target) {
@@ -160,7 +210,7 @@ export class AtlasSyncApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const actor = this._actorFromTarget(target);
       if (!actor) return;
       await clearLink(actor);
-      this._syncErrors.delete(actor.id);
+      this._forgetRowMessages(actor.id);
       ui.notifications.info(L("notify.unlinked"));
     });
   }
@@ -205,7 +255,7 @@ export class AtlasSyncApp extends HandlebarsApplicationMixin(ApplicationV2) {
       let ok = 0;
       const failures = [];
       const portraitsLeftOut = [];
-      this._syncErrors.clear();
+      this._forgetRowMessages();
       try {
         for (let i = 0; i < actors.length; i++) {
           if (this._closed || !canContinue(stamp).ok) { ui.notifications.warn(L("status.OPERATION_CANCELLED")); return; }

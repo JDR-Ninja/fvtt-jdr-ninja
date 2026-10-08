@@ -1,60 +1,107 @@
-<div class="standard-form jdr-ninja__overlay">
-  <p>{{localize "JDRNINJA.overlay.intro"}}</p>
-  {{#if notice}}<p class="notice notice-info">{{notice}}</p>{{/if}}
-  {{#if error}}<p class="notice notice-warning" role="alert">{{error}}</p>{{/if}}
-  <fieldset>
-    <legend>{{localize "JDRNINJA.overlay.title"}}</legend>
-    <div class="form-group">
-      <label for="jdr-ninja-overlay-enabled">{{localize "JDRNINJA.overlay.enable"}}</label>
-      <input id="jdr-ninja-overlay-enabled" name="overlayEnabled" type="checkbox" {{#if enabled}}checked{{/if}} {{#if busy}}disabled{{/if}}>
-      <p class="hint">{{localize "JDRNINJA.overlay.enableHint"}}</p>
-    </div>
-    <div class="form-group">
-      <label for="jdr-ninja-overlay-filter">{{localize "JDRNINJA.overlay.filter"}}</label>
-      <select id="jdr-ninja-overlay-filter" name="overlayForwardFilter" {{#if busy}}disabled{{/if}}>
-        {{#each filters}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-      </select>
-      <p class="hint">{{localize "JDRNINJA.overlay.filterHint"}}</p>
-    </div>
-    <div class="form-group">
-      <label for="jdr-ninja-overlay-hold">{{localize "JDRNINJA.overlay.hold"}}</label>
-      <select id="jdr-ninja-overlay-hold" name="overlayCardHoldSeconds" {{#if busy}}disabled{{/if}}>
-        {{#each holds}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-      </select>
-      <p class="hint">{{localize "JDRNINJA.overlay.holdHint"}}</p>
-    </div>
-  </fieldset>
-  {{#if isGM}}
-    <fieldset>
-      <legend>{{localize "JDRNINJA.overlay.tableCommands"}}</legend>
-      <div class="form-group">
-        <label for="jdr-ninja-overlay-tables">{{localize "JDRNINJA.overlay.tableCommands"}}</label>
-        <input id="jdr-ninja-overlay-tables" name="overlayTableCommandsEnabled" type="checkbox" {{#if tableCommands}}checked{{/if}} {{#if busy}}disabled{{/if}}>
-        <p class="hint">{{localize "JDRNINJA.overlay.tableCommandsHint"}}</p>
+<div class="standard-form jn-layout jdr-ninja__overlay">
+  <div class="jn-scroll">
+    {{#if notice}}<p class="notice notice-info">{{notice}}</p>{{/if}}
+    {{#if error}}<p class="notice notice-warning" role="alert">{{error}}</p>{{/if}}
+
+    <section class="jn-section" aria-labelledby="jdr-ninja-overlay-title-sending">
+      <h3 class="jn-section__title" id="jdr-ninja-overlay-title-sending">
+        <i class="fa-solid fa-paper-plane" aria-hidden="true"></i> {{localize "JDRNINJA.overlay.sendingTitle"}}
+      </h3>
+      <div class="form-group jdr-ninja__check">
+        <div class="form-fields">
+          <input id="jdr-ninja-overlay-enabled" name="overlayEnabled" type="checkbox" {{#if enabled}}checked{{/if}} {{#if busy}}disabled{{/if}}>
+        </div>
+        <label for="jdr-ninja-overlay-enabled">{{localize "JDRNINJA.overlay.enable"}}</label>
+        <i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img"
+           aria-label="{{localize "JDRNINJA.overlay.enableHint"}}" data-tooltip="{{localize "JDRNINJA.overlay.enableHint"}}"></i>
       </div>
-      <p class="hint">{{localize "JDRNINJA.overlay.tablesHint"}}</p>
-      <button type="button" data-action="commands">{{localize "JDRNINJA.overlay.manageCommands"}}</button>
-    </fieldset>
-  {{/if}}
-  <fieldset>
-    <legend>{{localize "JDRNINJA.overlay.diagnostics"}}</legend>
-    <p>{{localize "JDRNINJA.overlay.paidHint"}}</p>
-    <div class="jdr-ninja__actions">
-      <button type="button" data-action="diagnostics" {{#unless canCheck}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.overlay.check"}}</button>
-      <button type="button" data-action="testRoll" {{#unless canTest}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.overlay.test"}}</button>
-    </div>
-    <p class="hint">{{localize "JDRNINJA.overlay.testHint"}}</p>
-    {{#if hasDiagnostics}}
-      <dl class="jdr-ninja__diagnostics" aria-live="polite">
-        {{#each rows}}<div><dt>{{label}}</dt><dd>{{message}}</dd></div>{{/each}}
-      </dl>
+      <div class="form-group">
+        <label for="jdr-ninja-overlay-filter">{{localize "JDRNINJA.overlay.filter"}}</label>
+        <div class="form-fields">
+          <select id="jdr-ninja-overlay-filter" name="overlayForwardFilter" {{#if busy}}disabled{{/if}}>
+            {{#each filters}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+          </select>
+        </div>
+        <p class="hint">{{localize "JDRNINJA.overlay.filterHint"}}</p>
+      </div>
+      <div class="form-group">
+        <label for="jdr-ninja-overlay-hold">{{localize "JDRNINJA.overlay.hold"}}</label>
+        <div class="form-fields">
+          <select id="jdr-ninja-overlay-hold" name="overlayCardHoldSeconds" {{#if busy}}disabled{{/if}}>
+            {{#each holds}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+          </select>
+        </div>
+        <i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img"
+           aria-label="{{localize "JDRNINJA.overlay.holdHint"}}" data-tooltip="{{localize "JDRNINJA.overlay.holdHint"}}"></i>
+      </div>
+    </section>
+
+    {{#if isGM}}
+      <section class="jn-section" aria-labelledby="jdr-ninja-overlay-title-tables">
+        <h3 class="jn-section__title" id="jdr-ninja-overlay-title-tables">
+          <i class="fa-brands fa-twitch" aria-hidden="true"></i> {{localize "JDRNINJA.overlay.tablesTitle"}}
+        </h3>
+        <div class="form-group jdr-ninja__check">
+          <div class="form-fields">
+            <input id="jdr-ninja-overlay-tables" name="overlayTableCommandsEnabled" type="checkbox" {{#if tableCommands}}checked{{/if}} {{#if busy}}disabled{{/if}}>
+          </div>
+          <label for="jdr-ninja-overlay-tables">{{localize "JDRNINJA.overlay.tablesEnable"}}</label>
+          <i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img"
+             aria-label="{{localize "JDRNINJA.overlay.tableCommandsHint"}}" data-tooltip="{{localize "JDRNINJA.overlay.tableCommandsHint"}}"></i>
+        </div>
+        <div class="jn-toolbar">
+          <button type="button" data-action="commands">
+            <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> {{localize "JDRNINJA.overlay.manageCommands"}}
+          </button>
+          <i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img"
+             aria-label="{{localize "JDRNINJA.overlay.tablesHint"}}" data-tooltip="{{localize "JDRNINJA.overlay.tablesHint"}}"></i>
+        </div>
+      </section>
     {{/if}}
-    {{#if lastSuccess}}<p class="hint">{{lastSuccess}}</p>{{/if}}
-    {{#if lastError}}<p class="notice notice-warning">{{lastError}}</p>{{/if}}
-    {{#if busy}}<button type="button" data-action="cancel">{{localize "JDRNINJA.button.cancel"}}</button>{{/if}}
-    <div class="jdr-ninja__actions">
-      <button type="button" data-action="connections">{{localize "JDRNINJA.menu.label"}}</button>
-      {{#if needsSubscription}}<button type="button" data-action="subscription">{{localize "JDRNINJA.overlay.subscription"}}</button>{{/if}}
-    </div>
-  </fieldset>
+
+    <section class="jn-section" aria-labelledby="jdr-ninja-overlay-title-diagnostics">
+      <h3 class="jn-section__title" id="jdr-ninja-overlay-title-diagnostics">
+        <i class="fa-solid fa-stethoscope" aria-hidden="true"></i> {{localize "JDRNINJA.overlay.diagnostics"}}
+      </h3>
+      <p class="notice notice-info">{{localize "JDRNINJA.overlay.paidHint"}}</p>
+      <div class="jn-toolbar">
+        <button type="button" class="bright" data-action="diagnostics" {{#unless canCheck}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+          <i class="fa-solid fa-satellite-dish" aria-hidden="true"></i> {{localize "JDRNINJA.overlay.check"}}
+        </button>
+        <button type="button" data-action="testRoll" {{#unless canTest}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+          <i class="fa-solid fa-dice-d20" aria-hidden="true"></i> {{localize "JDRNINJA.overlay.test"}}
+        </button>
+        <i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img"
+           aria-label="{{localize "JDRNINJA.overlay.testHint"}}" data-tooltip="{{localize "JDRNINJA.overlay.testHint"}}"></i>
+        {{#if busy}}<button type="button" data-action="cancel">{{localize "JDRNINJA.button.cancel"}}</button>{{/if}}
+      </div>
+      {{#if hasDiagnostics}}
+        <dl class="jdr-ninja__diagnostics" aria-live="polite">
+          {{#each rows}}
+            <div class="jdr-ninja__diagnostic">
+              <dt>{{label}}</dt>
+              <dd>
+                {{#if level}}
+                  <span class="jn-pill jn-pill--{{level}}"><i class="fa-solid {{icon}}" aria-hidden="true"></i> {{message}}</span>
+                {{else}}{{message}}{{/if}}
+              </dd>
+            </div>
+          {{/each}}
+        </dl>
+      {{/if}}
+      {{#if lastSuccess}}<p class="jn-muted">{{lastSuccess}}</p>{{/if}}
+      {{#if lastError}}<p class="notice notice-warning">{{lastError}}</p>{{/if}}
+    </section>
+  </div>
+
+  <footer class="form-footer jn-footer">
+    <button type="button" data-action="connections">
+      <i class="fa-solid fa-plug" aria-hidden="true"></i> {{localize "JDRNINJA.menu.label"}}
+    </button>
+    {{#if needsSubscription}}
+      <button type="button" data-action="subscription">
+        <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> {{localize "JDRNINJA.overlay.subscription"}}
+      </button>
+    {{/if}}
+  </footer>
 </div>

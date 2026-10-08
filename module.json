@@ -9,7 +9,7 @@
   "authors": [{ "name": "JDR Ninja", "url": "https://www.jdr.ninja" }],
   "compatibility": { "minimum": "14" },
   "esmodules": ["scripts/main.js"],
-  "styles": ["styles/module.css"],
+  "styles": ["styles/module.css", "styles/connections.css", "styles/atlas-overlay.css", "styles/creatures.css", "styles/variables.css"],
   "languages": [
     { "lang": "fr", "name": "Français", "path": "lang/fr.json" },
     { "lang": "en", "name": "English", "path": "lang/en.json" },

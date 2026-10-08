@@ -1,0 +1,48 @@
+/* Atlas Sync and VTT Overlay windows. Shared components (layout, sections, cards, pills, buttons) live in module.css. */
+
+/* The information icon keeps its size wherever Foundry's form rows would stretch it. */
+.jdr-ninja-atlas .jn-info,
+.jdr-ninja-overlay .jn-info { flex: none; }
+
+/* A checkbox row reads "[x] label (i)": the box first, the label beside it, left-aligned, never split across columns. */
+.jdr-ninja-atlas .form-group.jdr-ninja__check,
+.jdr-ninja-overlay .form-group.jdr-ninja__check { display: flex; flex-wrap: nowrap; justify-content: flex-start; gap: 0.5rem; }
+.jdr-ninja-atlas .jdr-ninja__check > .form-fields,
+.jdr-ninja-overlay .jdr-ninja__check > .form-fields { flex: none; width: auto; }
+.jdr-ninja-atlas .jdr-ninja__check > label,
+.jdr-ninja-overlay .jdr-ninja__check > label { flex: 0 1 auto; }
+
+/* Atlas Sync: connection, world and system in the header, then the campaign controls, the characters and the footer. */
+.jdr-ninja-atlas .atlas-sync__header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.75rem; }
+.jdr-ninja-atlas .atlas-sync__world { font-weight: 600; overflow-wrap: anywhere; }
+.jdr-ninja-atlas .atlas-sync__system { overflow-wrap: anywhere; }
+.jdr-ninja-atlas .atlas-sync__refresh { margin-inline-start: auto; }
+/* The shared toolbar rule resets every button's width; an icon button keeps its square. */
+.jdr-ninja-atlas .jn-toolbar > button.jn-icon-button { width: var(--input-height, 2rem); }
+
+.jdr-ninja-atlas .atlas-sync__rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.jdr-ninja-atlas .atlas-sync__row.jn-card { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.jdr-ninja-atlas .atlas-sync__avatar { flex: none; width: 40px; height: 40px; object-fit: cover; border: none; border-radius: var(--jn-radius); }
+.jdr-ninja-atlas .atlas-sync__row-main { flex: 1 1 11rem; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; overflow-wrap: anywhere; }
+.jdr-ninja-atlas .atlas-sync__row-name { font-weight: 600; color: var(--color-text-emphatic, var(--color-text-primary)); }
+.jdr-ninja-atlas .atlas-sync__row-status { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; font-size: var(--font-size-12, 0.8rem); }
+.jdr-ninja-atlas .atlas-sync__row .notice { margin: 0; font-size: var(--font-size-12, 0.8rem); }
+.jdr-ninja-atlas .atlas-sync__row-actions { margin-inline-start: auto; }
+
+/* VTT Overlay: a row is a label, its control and a narrow column for the information icon, so every control lines up. */
+.jdr-ninja-overlay .form-group { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(0, 2fr) 1.25rem; align-items: center; gap: 0.25rem 0.5rem; }
+.jdr-ninja-overlay .form-group > .hint { grid-column: 1 / -1; }
+.jdr-ninja-overlay .form-group > .jn-info { margin: 0; justify-self: center; }
+
+/* The diagnostics table keeps its rows; each state is a pill, and a plain value stays text. */
+.jdr-ninja-overlay .jdr-ninja__diagnostics { margin: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.jdr-ninja-overlay .jdr-ninja__diagnostic { display: grid; grid-template-columns: minmax(6rem, 11rem) minmax(0, 1fr); align-items: center; column-gap: 1rem; }
+.jdr-ninja-overlay .jdr-ninja__diagnostic dt { display: block; margin: 0; text-shadow: none; font-weight: 600; color: var(--color-text-secondary); }
+.jdr-ninja-overlay .jdr-ninja__diagnostic dd { margin: 0; overflow-wrap: anywhere; }
+.jdr-ninja-overlay .jdr-ninja__diagnostic .jn-pill { border-radius: 0.9rem; }
+@container (max-width: 400px) {
+  .jdr-ninja-overlay .jdr-ninja__diagnostic { grid-template-columns: minmax(0, 1fr); row-gap: 0.15rem; }
+}
+
+/* Independent of DSN's hide class: reveal at the later deadline, without adding the delays. */
+.jdr-ninja-overlay-hold { display: none !important; }

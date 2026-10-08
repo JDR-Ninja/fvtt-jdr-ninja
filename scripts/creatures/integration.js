@@ -23,20 +23,36 @@ function verifyAccess() {
   });
 }
 
+const SHORTCUTS = [["monster", MonsterGeneratorPanel, "fa-solid fa-dragon"], ["npc", NpcGeneratorPanel, "fa-solid fa-user"]];
+
+/** The module's shortcuts share one compact row with the other integrations (Atlas): reuse it, create it only when absent. */
+function shortcutRow(parent) {
+  let row = parent.querySelector(".jn-directory-actions");
+  if (!row) {
+    row = document.createElement("div"); row.className = "jn-directory-actions";
+    parent.append(row);
+  }
+  return row;
+}
+
 export function renderCreatureButtons(_app, html) {
   const root = html instanceof HTMLElement ? html : html?.[0];
   if (!root) return;
   root.querySelectorAll(".jdr-ninja-creature-open").forEach(button => button.remove());
+  // Our buttons may have been the row's only content: leave no empty row behind.
+  root.querySelectorAll(".jn-directory-actions").forEach(row => { if (!row.childElementCount) row.remove(); });
   if (creatureClient.local()) return;
   if (creatureClient.access?.allowed !== true) { verifyAccess(); return; }
-  const parent = root.querySelector(".header-actions") || root.querySelector(".directory-footer") || root;
-  for (const [kind, panel] of [["monster", MonsterGeneratorPanel], ["npc", NpcGeneratorPanel]]) {
-    const button = document.createElement("button");
-    button.type = "button"; button.className = "jdr-ninja-creature-open";
-    button.textContent = game.i18n.localize(`${I18N}.creatures.${kind}Shortcut`);
-    button.title = game.i18n.localize(`${I18N}.creatures.${kind}`);
+  const row = shortcutRow(root.querySelector(".header-actions") || root.querySelector(".directory-footer") || root);
+  for (const [kind, panel, icon] of SHORTCUTS) {
+    const button = document.createElement("button"), glyph = document.createElement("i");
+    button.type = "button"; button.className = "jdr-ninja-creature-open jn-directory-button";
+    // The short label is visible; the full title is the native tooltip.
+    button.dataset.tooltip = game.i18n.localize(`${I18N}.creatures.${kind}`);
+    glyph.className = icon; glyph.setAttribute("aria-hidden", "true");
+    button.append(glyph, game.i18n.localize(`${I18N}.creatures.${kind}Shortcut`));
     button.addEventListener("click", () => panel.open());
-    parent.append(button);
+    row.append(button);
   }
 }
 export function registerCreatureIntegration() {

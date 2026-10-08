@@ -1,18 +1,53 @@
-<div class="jn-variables">
-  <p class="hint">{{localize "JDRNINJA.variables.advanced"}}: {{localize "JDRNINJA.variables.macroHint"}}</p>
-  <div class="jn-variable-inline"><select name="macro" aria-label="{{localize 'JDRNINJA.variables.macro'}}">{{#each macros}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select><button type="button" data-action="load">{{localize "JDRNINJA.variables.load"}}</button></div>
-  <p role="status">{{message}}</p>{{#if stale}}<p role="alert">{{localize "JDRNINJA.variables.error.conflict"}}</p>{{/if}}
+<div class="standard-form jn-layout jn-variables">
+  <div class="jn-scroll">
+    <p class="hint">{{localize "JDRNINJA.variables.macroHint"}}</p>
+    <div class="jn-toolbar jn-macro-picker">
+      <select name="macro" aria-label="{{localize 'JDRNINJA.variables.macro'}}">{{#each macros}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select>
+      <button type="button" data-action="load"><i class="fa-solid fa-gear" aria-hidden="true"></i> {{localize "JDRNINJA.variables.load"}}</button>
+    </div>
+    <p class="notice" role="status">{{message}}</p>
+    {{#if stale}}<p class="notice notice-warning" role="alert">{{localize "JDRNINJA.variables.error.conflict"}}</p>{{/if}}
+    {{#if selected}}
+    <div class="jn-section">
+      <h3 class="jn-section__title"><i class="fa-solid fa-list-check" aria-hidden="true"></i>{{localize "JDRNINJA.variables.arguments"}}</h3>
+      {{#if arguments.length}}
+      <table class="jn-arguments">
+        <thead>
+          <tr>
+            <th scope="col" class="jn-arguments__name">{{localize "JDRNINJA.variables.name"}}</th>
+            <th scope="col" class="jn-arguments__type">{{localize "JDRNINJA.variables.typeLabel"}}</th>
+            <th scope="col" class="jn-arguments__required">{{localize "JDRNINJA.variables.required"}}</th>
+            <th scope="col" class="jn-arguments__default">{{localize "JDRNINJA.variables.default"}}</th>
+            <th scope="col" class="jn-arguments__actions"><span class="jn-sr-only">{{localize "JDRNINJA.variables.remove"}}</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each arguments}}<tr data-argument="{{index}}">
+            <td><input type="text" maxlength="64" data-arg-field="name" value="{{name}}" aria-label="{{localize 'JDRNINJA.variables.argumentName'}}"></td>
+            <td><select data-arg-field="type" aria-label="{{localize 'JDRNINJA.variables.typeLabel'}}">{{#each types}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></td>
+            <td class="jn-arguments__required"><input type="checkbox" data-arg-field="required" {{#if required}}checked{{/if}} aria-label="{{localize 'JDRNINJA.variables.required'}}"></td>
+            <td><div class="jn-arguments__default">
+              <input type="checkbox" data-arg-field="hasDefault" {{#if hasDefault}}checked{{/if}} aria-label="{{localize 'JDRNINJA.variables.hasDefault'}}" data-tooltip="{{localize 'JDRNINJA.variables.hasDefault'}}">
+              <input type="text" maxlength="2000" data-arg-field="default" value="{{defaultText}}" aria-label="{{localize 'JDRNINJA.variables.default'}}">
+            </div></td>
+            <td class="jn-arguments__actions"><button type="button" class="jn-icon-button jn-danger" data-action="remove" data-index="{{index}}" aria-label="{{localize 'JDRNINJA.variables.remove'}}" data-tooltip="{{localize 'JDRNINJA.variables.remove'}}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></td>
+          </tr>{{/each}}
+        </tbody>
+      </table>
+      <p class="hint">{{localize "JDRNINJA.variables.argumentDefaultHint"}}</p>
+      {{/if}}
+      <div class="jn-toolbar"><button type="button" data-action="add"><i class="fa-solid fa-plus" aria-hidden="true"></i> {{localize "JDRNINJA.variables.addArgument"}}</button></div>
+    </div>
+    <div class="jn-section">
+      <p class="hint">{{localize "JDRNINJA.variables.macroAckHint"}}</p>
+      <pre class="jn-code"><code>{{sample}}</code></pre>
+    </div>
+    {{/if}}
+  </div>
   {{#if selected}}
-  {{#each arguments}}<fieldset data-argument="{{index}}"><legend>{{localize "JDRNINJA.variables.argument"}}</legend>
-    <label>{{localize "JDRNINJA.variables.argumentName"}}<input type="text" maxlength="64" data-arg-field="name" value="{{name}}"></label>
-    <label>{{localize "JDRNINJA.variables.typeLabel"}}<select data-arg-field="type">{{#each types}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-    <label><input type="checkbox" data-arg-field="required" {{#if required}}checked{{/if}}> {{localize "JDRNINJA.variables.required"}}</label>
-    <label><input type="checkbox" data-arg-field="hasDefault" {{#if hasDefault}}checked{{/if}}> {{localize "JDRNINJA.variables.hasDefault"}}</label>
-    <label>{{localize "JDRNINJA.variables.default"}}<input type="text" maxlength="2000" data-arg-field="default" value="{{defaultText}}"></label>
-    <p class="hint">{{localize "JDRNINJA.variables.argumentDefaultHint"}}</p>
-    <button type="button" data-action="remove" data-index="{{index}}">{{localize "JDRNINJA.variables.remove"}}</button>
-  </fieldset>{{/each}}
-  <div class="jn-variable-inline"><button type="button" data-action="add">{{localize "JDRNINJA.variables.addArgument"}}</button><button type="button" data-action="save">{{localize "JDRNINJA.variables.save"}}</button><button type="button" data-action="disable">{{localize "JDRNINJA.variables.disableMacro"}}</button></div>
-  <p>{{localize "JDRNINJA.variables.macroAckHint"}}</p><pre><code>{{sample}}</code></pre>
+  <footer class="form-footer jn-footer">
+    <button type="button" class="bright" data-action="save"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> {{localize "JDRNINJA.variables.save"}}</button>
+    <button type="button" class="jn-danger" data-action="disable"><i class="fa-solid fa-trash" aria-hidden="true"></i> {{localize "JDRNINJA.variables.disableMacro"}}</button>
+  </footer>
   {{/if}}
 </div>

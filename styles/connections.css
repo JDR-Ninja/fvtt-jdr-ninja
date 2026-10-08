@@ -1,0 +1,63 @@
+/* Connections and Stream Deck windows. Shared components (layout, sections, cards, pills, toolbar, footer) live in module.css. */
+.jdr-ninja :is(.jdr-ninja__connections, .jdr-ninja__stream-deck) p { margin: 0; }
+.jdr-ninja :is(.jdr-ninja__connections, .jdr-ninja__stream-deck) .jn-scroll { gap: 0.75rem; padding-inline-end: 0.25rem; }
+.jdr-ninja :is(.jdr-ninja__connections, .jdr-ninja__stream-deck) .form-group { min-width: 0; }
+.jdr-ninja :is(.jdr-ninja__connections, .jdr-ninja__stream-deck) .form-fields > .jn-info { flex: none; }
+.jdr-ninja .jdr-ninja__code { font-size: 1.3em; letter-spacing: 0.1em; }
+
+/* Foundry styles text, number and password inputs but not URL ones: these two windows give them the same field look and focus ring. */
+.jdr-ninja :is(.jdr-ninja__connections, .jdr-ninja__stream-deck) input[type="url"] { width: 100%; height: var(--input-height); line-height: var(--input-height);
+  padding: 0 0.5rem; background: var(--input-background-color); border: 1px solid var(--input-border-color); border-radius: 4px;
+  box-shadow: var(--input-box-shadow); outline: 1px solid transparent; font-family: inherit; font-size: inherit; color: var(--input-text-color); }
+.jdr-ninja :is(.jdr-ninja__connections, .jdr-ninja__stream-deck) input[type="url"]:focus { outline: 2px solid var(--input-focus-outline-color); outline-offset: -2px; }
+.jdr-ninja :is(.jdr-ninja__connections, .jdr-ninja__stream-deck) input[type="url"]:disabled { opacity: 1; }
+
+/* An enable switch: the checkbox, its label and the info icon stay together on the left instead of splitting across the row. */
+.jdr-ninja .jdr-ninja__toggle .form-fields { justify-content: flex-start; flex-wrap: nowrap; gap: 0.5rem; }
+.jdr-ninja .jdr-ninja__toggle .form-fields > input[type="checkbox"] { margin: 0; }
+.jdr-ninja .jdr-ninja__toggle .form-fields > label { flex: 0 1 auto; font-weight: 600; line-height: 1.3; }
+.jdr-ninja .jdr-ninja__toggle .jn-info { margin-inline-start: 0; }
+
+/* Notices keep their role; the icon-free level edge comes from module.css. */
+.jdr-ninja :is(.jdr-ninja__connections, .jdr-ninja__stream-deck) .notice { overflow-wrap: anywhere; }
+
+/* Stream Deck: the switch on one side, the state pill on the other, then the local connection. */
+.jdr-ninja .jdr-ninja__header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.jdr-ninja .jdr-ninja__header .form-group { flex: 1 1 auto; }
+.jdr-ninja .jdr-ninja__status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+.jdr-ninja .jdr-ninja__note { display: flex; gap: 0.5rem; align-items: baseline; margin-block-start: auto; }
+.jdr-ninja .jdr-ninja__note > i { flex: none; color: var(--color-text-secondary); }
+
+/* Connections: one card per service, two columns in a wide window and one in a narrow one. */
+.jdr-ninja .jdr-ninja__services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+@container (max-width: 520px) { .jdr-ninja .jdr-ninja__services { grid-template-columns: minmax(0, 1fr); } }
+.jdr-ninja .jdr-ninja__service { gap: 0.5rem; }
+.jdr-ninja .jdr-ninja__service > .jn-toolbar:last-child { margin-block-start: auto; }
+.jdr-ninja .jdr-ninja__service-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.25rem 0.5rem; }
+.jdr-ninja .jdr-ninja__service-icon { flex: none; width: 1.5rem; text-align: center; font-size: 1.15rem; line-height: 1.5rem; color: var(--color-text-secondary); }
+.jdr-ninja .jdr-ninja__service-title { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.jdr-ninja .jdr-ninja__service-title h3 { margin: 0; padding: 0; border: none; font-size: var(--font-size-16, 1rem); font-weight: 600; line-height: 1.5rem;
+  color: var(--color-text-emphatic, var(--color-text-primary)); overflow-wrap: anywhere; }
+.jdr-ninja .jdr-ninja__service-title .jdr-ninja__status { font-size: var(--font-size-12, 0.8rem); color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.jdr-ninja .jdr-ninja__service-title .jdr-ninja__status strong { color: var(--color-text-primary); }
+.jdr-ninja .jdr-ninja__service-head > .jn-pill { margin-block-start: 0.1rem; }
+.jdr-ninja .jdr-ninja__detail { display: flex; gap: 0.35rem; align-items: baseline; font-size: var(--font-size-12, 0.8rem); }
+.jdr-ninja .jdr-ninja__detail > i:first-child { flex: none; }
+.jdr-ninja .jdr-ninja__service > p.jn-muted { font-size: var(--font-size-12, 0.8rem); }
+.jdr-ninja .jdr-ninja__service p.notice { font-size: var(--font-size-12, 0.8rem); }
+
+/* Advanced options: a quiet disclosure, closed by default; its blocks are separated by the shared section rule. */
+.jdr-ninja .jdr-ninja__advanced { flex: none; padding-block-start: 0.75rem; border-block-start: 1px solid var(--jn-line); }
+.jdr-ninja .jdr-ninja__advanced > summary { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-weight: 600; }
+.jdr-ninja .jdr-ninja__advanced > summary > i { color: var(--color-text-secondary); width: 1.1em; text-align: center; }
+.jdr-ninja .jdr-ninja__advanced > summary > .jdr-ninja__chevron { margin-inline-start: auto; transition: transform 0.15s; }
+.jdr-ninja .jdr-ninja__advanced[open] > summary > .jdr-ninja__chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .jdr-ninja .jdr-ninja__advanced > summary > .jdr-ninja__chevron { transition: none; } }
+.jdr-ninja .jdr-ninja__advanced > summary:focus-visible { outline: 2px solid var(--color-level-info); outline-offset: 2px; border-radius: 2px; }
+.jdr-ninja .jdr-ninja__advanced-body { display: flex; flex-direction: column; gap: 1rem; margin-block-start: 0.75rem; }
+.jdr-ninja .jdr-ninja__advanced .jn-section__title { font-size: var(--font-size-14, 0.9rem); }
+
+/* Waiting for the browser or the site: the footer holds the state and the one way out. */
+.jdr-ninja .jdr-ninja__busy { align-items: center; }
+.jdr-ninja .jdr-ninja__busy > span { flex: 1 1 auto; }
+.jdr-ninja .jdr-ninja__busy > button { flex: none; }

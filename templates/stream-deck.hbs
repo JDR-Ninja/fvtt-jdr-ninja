@@ -1,37 +1,50 @@
-<div class="standard-form jdr-ninja__connections">
-  <p>{{localize "JDRNINJA.streamDeck.intro"}}</p>
-  <div class="form-group">
-    <label for="jdr-stream-deck-enabled">{{localize "JDRNINJA.streamDeck.enable"}}</label>
-    <input id="jdr-stream-deck-enabled" name="streamDeckEnabled" type="checkbox" {{#if enabled}}checked{{/if}} {{#if busy}}disabled{{/if}}>
-    <p class="hint">{{localize "JDRNINJA.streamDeck.enableHint"}}</p>
+<div class="standard-form jn-layout jdr-ninja__stream-deck">
+  <div class="jn-scroll">
+    <div class="jdr-ninja__header">
+      <div class="form-group jdr-ninja__toggle">
+        <div class="form-fields">
+          <input id="jdr-stream-deck-enabled" name="streamDeckEnabled" type="checkbox" {{#if enabled}}checked{{/if}} {{#if busy}}disabled{{/if}}>
+          <label for="jdr-stream-deck-enabled">{{localize "JDRNINJA.streamDeck.enable"}}</label>
+          <i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img" aria-label="{{localize 'JDRNINJA.streamDeck.enableHint'}}" data-tooltip="{{localize 'JDRNINJA.streamDeck.enableHint'}}"></i>
+        </div>
+      </div>
+      <p class="jdr-ninja__status" aria-live="polite">
+        <span class="jn-pill jn-pill--{{pill.level}}" data-stream-deck-status><i class="fa-solid {{pill.icon}}" aria-hidden="true" data-pill-icon></i><span data-pill-text>{{pill.label}}</span></span>
+      </p>
+    </div>
+    <p class="notice notice-error" role="alert" data-stream-deck-error {{#unless error}}hidden{{/unless}}>{{error}}</p>
+    <section class="jn-section">
+      <h3 class="jn-section__title"><i class="fa-solid fa-plug" aria-hidden="true"></i>{{localize "JDRNINJA.streamDeck.connection"}}</h3>
+      <div class="form-group">
+        <label for="jdr-stream-deck-url">{{localize "JDRNINJA.streamDeck.url"}}</label>
+        <div class="form-fields">
+          <input id="jdr-stream-deck-url" name="streamDeckUrl" type="url" value="{{url}}" maxlength="512" aria-describedby="jdr-stream-deck-url-hint" {{#if busy}}disabled{{/if}}>
+        </div>
+        <p class="hint" id="jdr-stream-deck-url-hint">{{localize "JDRNINJA.streamDeck.urlHint"}}<i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img" aria-label="{{localize 'JDRNINJA.streamDeck.urlDetail'}}" data-tooltip="{{localize 'JDRNINJA.streamDeck.urlDetail'}}"></i></p>
+      </div>
+      <div class="form-group">
+        <label for="jdr-stream-deck-key">{{localize "JDRNINJA.streamDeck.key"}}</label>
+        <div class="form-fields">
+          <input id="jdr-stream-deck-key" name="streamDeckKey" type="password" autocomplete="off" spellcheck="false" maxlength="128" aria-describedby="jdr-stream-deck-key-hint" {{#if busy}}disabled{{/if}}>
+          <button type="button" class="jn-icon-button" data-action="generate" aria-label="{{localize 'JDRNINJA.streamDeck.generate'}}" data-tooltip="{{localize 'JDRNINJA.streamDeck.generate'}}" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i></button>
+        </div>
+        <p class="hint" id="jdr-stream-deck-key-hint">{{localize "JDRNINJA.streamDeck.keyHint"}}</p>
+      </div>
+      {{#if generated}}
+        <div class="form-group">
+          <label for="jdr-stream-deck-generated">{{localize "JDRNINJA.streamDeck.generated"}}</label>
+          <div class="form-fields">
+            <input id="jdr-stream-deck-generated" type="text" value="{{generated}}" readonly autocomplete="off" spellcheck="false" aria-describedby="jdr-stream-deck-generated-hint">
+          </div>
+          <p class="hint" id="jdr-stream-deck-generated-hint">{{localize "JDRNINJA.streamDeck.generatedHint"}}</p>
+        </div>
+      {{/if}}
+    </section>
+    <p class="hint jdr-ninja__note"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>{{localize "JDRNINJA.streamDeck.note"}}</p>
   </div>
-  <p class="jdr-ninja__status" aria-live="polite"><span class="badge badge-neutral" data-stream-deck-status>{{status}}</span></p>
-  <p class="notice notice-warning" role="alert" data-stream-deck-error {{#unless error}}hidden{{/unless}}>{{error}}</p>
-  <fieldset>
-    <legend>{{localize "JDRNINJA.streamDeck.connection"}}</legend>
-    <div class="form-group">
-      <label for="jdr-stream-deck-url">{{localize "JDRNINJA.streamDeck.url"}}</label>
-      <input id="jdr-stream-deck-url" name="streamDeckUrl" type="url" value="{{url}}" maxlength="512" {{#if busy}}disabled{{/if}}>
-      <p class="hint">{{localize "JDRNINJA.streamDeck.urlHint"}}</p>
-    </div>
-    <div class="form-group">
-      <label for="jdr-stream-deck-key">{{localize "JDRNINJA.streamDeck.key"}}</label>
-      <input id="jdr-stream-deck-key" name="streamDeckKey" type="password" autocomplete="off" spellcheck="false" maxlength="128" {{#if busy}}disabled{{/if}}>
-      <p class="hint">{{localize "JDRNINJA.streamDeck.keyHint"}}</p>
-    </div>
-    {{#if generated}}
-      <p class="hint">{{localize "JDRNINJA.streamDeck.generatedHint"}}</p>
-      <input type="text" value="{{generated}}" readonly aria-label="{{localize 'JDRNINJA.streamDeck.key'}}" autocomplete="off" spellcheck="false">
-    {{/if}}
-    <div class="jdr-ninja__actions">
-      <button type="button" data-action="generate" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.streamDeck.generate"}}</button>
-      <button type="button" data-action="save" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.streamDeck.save"}}</button>
-    </div>
-  </fieldset>
-  <div class="jdr-ninja__actions">
-    <button type="button" data-action="reconnect" {{#unless enabled}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.streamDeck.reconnect"}}</button>
-    <button type="button" data-action="disconnect" {{#unless configured}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.streamDeck.disconnect"}}</button>
-  </div>
-  <p class="hint">{{localize "JDRNINJA.streamDeck.permissions"}}</p>
-  <p class="hint">{{localize "JDRNINJA.streamDeck.companion"}}</p>
+  <footer class="form-footer jn-footer">
+    <button type="button" class="bright" data-action="save" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> {{localize "JDRNINJA.streamDeck.save"}}</button>
+    <button type="button" data-action="reconnect" {{#unless enabled}}disabled{{else}}{{#if busy}}disabled{{/if}}{{/unless}}><i class="fa-solid fa-rotate" aria-hidden="true"></i> {{localize "JDRNINJA.streamDeck.reconnect"}}</button>
+    <button type="button" class="jn-danger" data-action="disconnect" {{#unless configured}}disabled{{else}}{{#if busy}}disabled{{/if}}{{/unless}}><i class="fa-solid fa-link-slash" aria-hidden="true"></i> {{localize "JDRNINJA.streamDeck.disconnect"}}</button>
+  </footer>
 </div>

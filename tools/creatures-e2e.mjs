@@ -175,7 +175,9 @@ try {
     assert.match(evidence.id, /^[a-f0-9]{16}$/); assert.equal(evidence.type, "npc"); assert.equal(evidence.hp, 27);
     assert.equal(evidence.publicBiography, ""); assert(evidence.privateBiography); assert.equal(evidence.ownership, 0);
     assert.equal(evidence.reference, evidence.owner); assert.equal(evidence.duplicateNames, 1);
-    assert.equal(await window.locator('[data-action="create"]').isDisabled(), true);
+    // Once created, the preview offers no second creation: "Open sheet" replaces "Create actor" as the primary action.
+    assert.equal(await window.locator('[data-action="create"]').count(), 0);
+    assert.equal(await window.locator('button.bright[data-action="sheet"]').count(), 1);
     report.cases.at(-1).native = evidence;
     await window.screenshot({ path: join(dirname(reportPath), `${kind}.png`) });
   });

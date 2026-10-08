@@ -16,9 +16,9 @@ export class MacroArgumentsPanel extends HandlebarsApplicationMixin(ApplicationV
     return panel;
   }
   static DEFAULT_OPTIONS = { id: "jdr-ninja-macro-arguments", classes: ["jdr-ninja"], tag: "div",
-    window: { title: `${I18N}.variables.menu.macroArguments`, icon: "fa-solid fa-code", resizable: true }, position: { width: 720, height: 660 },
+    window: { title: `${I18N}.variables.menu.macroArguments`, icon: "fa-solid fa-code", resizable: true }, position: { width: 720, height: 720 },
     actions: Object.fromEntries(["load", "add", "remove", "save", "disable"].map(key => [key, function(_event, target) { return this.action(key, target); }])) };
-  static PARTS = { body: { template: `modules/${MODULE_ID}/templates/macro-arguments.hbs` } };
+  static PARTS = { body: { template: `modules/${MODULE_ID}/templates/macro-arguments.hbs`, scrollable: [".jn-scroll"] } };
   draft = { version: 1, arguments: [] }; macroId = ""; dirty = false; message = ""; base = undefined;
   macros() { return game.macros.contents.filter(macro => macro.type === "script" && macro.canExecute && macro.testUserPermission(game.user, "OWNER")); }
   async _prepareContext() {

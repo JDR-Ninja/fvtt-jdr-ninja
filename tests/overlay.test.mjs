@@ -15,7 +15,7 @@ class App {
 }
 globalThis.foundry = { applications: { api: { ApplicationV2: App, HandlebarsApplicationMixin: base => base } },
   utils: { randomID: () => "fixture-test-id" } };
-const { OverlayPanel } = await import("../scripts/overlay/panel.js");
+const { OverlayPanel, diagnosticStatus, formatMoment } = await import("../scripts/overlay/panel.js");
 const { ConnectionPanel } = await import("../scripts/connection-panel.js");
 const copy = JSON.parse(await readFile(new URL("../lang/fr.json", import.meta.url), "utf8"));
 
@@ -515,16 +515,139 @@ test("the overlay template is localized, escapes server labels and hides table c
     const hbs = Handlebars.create(); hbs.registerHelper("localize", key => strings[key] ?? key);
     const context = await new OverlayPanel()._prepareContext();
     context.hasDiagnostics = true;
-    context.rows = [{ label: strings["JDRNINJA.overlay.diag.account"], message: "<img src=x onerror=fixture()>" }];
+    context.rows = [{ label: strings["JDRNINJA.overlay.diag.account"], message: "<img src=x onerror=fixture()>" },
+      { label: strings["JDRNINJA.overlay.diag.obs"], message: "<img src=y onerror=fixture()>", level: "warning", icon: "fa-triangle-exclamation" }];
     const html = hbs.compile(template)(context);
     assert(!html.includes("JDRNINJA."), locale);
-    assert(html.includes("&lt;img")); assert(!html.includes("<img src=x"));
+    assert(html.includes("&lt;img")); assert(!html.includes("<img src=x")); assert(!html.includes("<img src=y"));
+    assert(html.includes("jn-pill--warning") && html.includes("&lt;img src&#x3D;y"));
     assert(html.includes('name="overlayTableCommandsEnabled"'));
     const player = hbs.compile(template)({ ...context, isGM: false });
     assert(!player.includes('name="overlayTableCommandsEnabled"'));
     assert(player.includes('name="overlayEnabled"'));
     for (const action of html.matchAll(/data-action="(\w+)"/g)) assert.equal(typeof OverlayPanel.DEFAULT_OPTIONS.actions[action[1]], "function");
   }
+});
+
+/** The diagnostics the account's endpoint answers, with the parts a test changes. */
+function accountAnswer(values = {}) {
+  return { ok: true, tokenKind: "foundry", account: "Fixture GM", entitled: true,
+    overlay: { exists: true, enabled: true, connectedClients: 1 }, tableCommands: { secondsSinceLastPoll: 3 }, ...values };
+}
+
+test("pill levels: a missing subscription or overlay is an error, a missing OBS source or poll a warning, the rest succeeds", () => {
+  const ok = { level: "success", icon: "fa-circle-check" }, warning = { level: "warning", icon: "fa-triangle-exclamation" },
+    error = { level: "error", icon: "fa-circle-xmark" };
+  const pills = status => Object.fromEntries(Object.entries(diagnosticStatus(status)).map(([key, { ok: state, ...pill }]) => [key, [state, pill]]));
+  assert.deepEqual(pills(accountAnswer()), { subscription: [true, ok], overlay: [true, ok], obs: [true, ok], poll: [true, ok] });
+  assert.deepEqual(pills(accountAnswer({ entitled: false })).subscription, [false, error]);
+  assert.deepEqual(pills(accountAnswer({ overlay: { exists: true, enabled: false, connectedClients: 1 } })).overlay, [false, error]);
+  assert.deepEqual(pills(accountAnswer({ overlay: { exists: false, enabled: true, connectedClients: 1 } })).overlay, [false, error]);
+  assert.deepEqual(pills(accountAnswer({ overlay: { exists: true, enabled: true, connectedClients: 0 } })).obs, [false, warning]);
+  assert.deepEqual(pills(accountAnswer({ tableCommands: {} })).poll, [false, warning]);
+  assert.deepEqual(pills(accountAnswer({ tableCommands: { secondsSinceLastPoll: null } })).poll, [false, warning]);
+  // A partial answer never throws, and every line of it reads as missing.
+  assert.deepEqual(Object.values(diagnosticStatus({ account: "Partial" })).map(line => line.ok), [false, false, false, false]);
+});
+
+test("the last accepted send is dated in Foundry's language, without seconds", () => {
+  const moment = Date.UTC(2026, 9, 8, 19, 30, 45);
+  assert.equal(formatMoment(moment, "en", { timeZone: "UTC" }).replace(/\s/g, " "), "Oct 8, 2026, 7:30 PM");
+  assert.match(formatMoment(moment, "fr", { timeZone: "UTC" }), /19:30/);
+  for (const locale of ["en", "fr", "es", "de", "it"]) assert.doesNotMatch(formatMoment(moment, locale, { timeZone: "UTC" }), /:45/, locale);
+  for (const value of [0, null, undefined, "", "not a date", Number.NaN]) assert.equal(formatMoment(value, "en"), null, String(value));
+  assert.match(formatMoment(moment, "not_a_locale", { timeZone: "UTC" }), /2026/);
+});
+
+test("each diagnostics line carries its pill beside its message; the account stays a plain value, and players get no poll line", async () => {
+  const label = key => copy[`JDRNINJA.overlay.diag.${key}`];
+  const panel = new OverlayPanel();
+  panel._diagnostics = accountAnswer({ overlay: { exists: true, enabled: true, connectedClients: 0 } });
+  const context = await panel._prepareContext();
+  assert.deepEqual(context.rows.map(row => [row.label, row.level]), [[label("account"), null], [label("subscription"), "success"],
+    [label("overlay"), "success"], [label("obs"), "warning"], [label("poll"), "success"]]);
+  assert.equal(context.rows[0].message, "Fixture GM");
+  assert.equal(context.rows[3].message, copy["JDRNINJA.overlay.diag.obsMissing"]);
+  assert.equal(context.rows[3].icon, "fa-triangle-exclamation");
+  panel._diagnostics = accountAnswer({ entitled: false, overlay: { exists: false } });
+  const refused = await panel._prepareContext();
+  assert.deepEqual(refused.rows.slice(1, 3).map(row => [row.level, row.message]), [["error", copy["JDRNINJA.overlay.error.notEntitled"]],
+    ["error", copy["JDRNINJA.overlay.error.overlayDisabled"]]]);
+  game.user.isGM = false;
+  assert.equal((await panel._prepareContext()).rows.some(row => row.label === label("poll")), false);
+  // The last send reads like the rest of the window: Foundry's language, no seconds.
+  settings.set("overlayLastSuccessAt", Date.UTC(2026, 9, 8, 19, 30, 45));
+  const { lastSuccess } = await panel._prepareContext();
+  assert.match(lastSuccess, /^Dernier envoi accepté : /); assert.doesNotMatch(lastSuccess, /:45/);
+});
+
+test("the overlay window is one layout of three titled sections, one primary action, and a footer that holds the navigation", async () => {
+  const template = await readFile(new URL("../templates/overlay.hbs", import.meta.url), "utf8");
+  for (const locale of ["fr", "en", "es", "de", "it"]) {
+    const strings = JSON.parse(await readFile(new URL(`../lang/${locale}.json`, import.meta.url), "utf8"));
+    game.i18n.localize = key => strings[key] ?? key;
+    const hbs = Handlebars.create(); hbs.registerHelper("localize", key => strings[key] ?? key);
+    const panel = new OverlayPanel();
+    panel._diagnostics = accountAnswer({ entitled: false });
+    const html = hbs.compile(template)(await panel._prepareContext());
+    const flat = html.replace(/\s+/g, " "), esc = value => Handlebars.escapeExpression(value);
+    assert(!html.includes("JDRNINJA."), locale);
+    // No frames: sections replace fieldsets, in a scrolling layout with a fixed footer.
+    assert.match(html, /^<div class="standard-form jn-layout jdr-ninja__overlay">/);
+    assert(!html.includes("<fieldset") && !html.includes("<legend"), locale);
+    assert.equal(html.match(/<footer class="form-footer jn-footer">/g).length, 1);
+    assert.equal(html.match(/class="jn-section"/g).length, 3, "roll sending, Twitch table draws and diagnostics");
+    const titles = [...html.matchAll(/<h3 class="jn-section__title"[^>]*>\s*<i class="([^"]+)" aria-hidden="true"><\/i>\s*([^<]+?)\s*<\/h3>/g)];
+    assert.deepEqual(titles.map(match => match[2]), [strings["JDRNINJA.overlay.sendingTitle"], strings["JDRNINJA.overlay.tablesTitle"],
+      strings["JDRNINJA.overlay.diagnostics"]], locale);
+    assert(titles.every(match => /fa-(solid|brands) fa-/.test(match[1])), "each title has its icon");
+    // The Twitch section's title is not repeated by its checkbox label.
+    assert.notEqual(strings["JDRNINJA.overlay.tablesTitle"], strings["JDRNINJA.overlay.tablesEnable"], locale);
+    assert(flat.includes(`<label for="jdr-ninja-overlay-tables">${esc(strings["JDRNINJA.overlay.tablesEnable"])}</label>`), locale);
+    // One primary button at most; none of the others is stretched outside the footer.
+    assert.equal((html.match(/<button[^>]*class="[^"]*\bbright\b[^"]*"/g) ?? []).length, 1, locale);
+    const beforeFooter = html.slice(0, html.indexOf("<footer"));
+    assert(!beforeFooter.includes('data-action="connections"') && !beforeFooter.includes('data-action="subscription"'));
+    assert(html.slice(html.indexOf("<footer")).includes('data-action="connections"'));
+    assert(html.slice(html.indexOf("<footer")).includes('data-action="subscription"'));
+    // The paid mention is a visible information notice; the diagnostics keep their table and live region.
+    assert(flat.includes(`<p class="notice notice-info">${esc(strings["JDRNINJA.overlay.paidHint"])}</p>`), locale);
+    assert(flat.includes('<dl class="jdr-ninja__diagnostics" aria-live="polite">'));
+    // Pills carry the level, an icon and the message; the account line is text.
+    assert(flat.includes('<span class="jn-pill jn-pill--error"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> '
+      + `${esc(strings["JDRNINJA.overlay.error.notEntitled"])}</span>`), locale);
+    assert(flat.includes('<span class="jn-pill jn-pill--success"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> '
+      + `${esc(strings["JDRNINJA.overlay.diag.overlayActive"])}</span>`), locale);
+    assert(flat.includes("<dd> Fixture GM </dd>"), locale);
+    // Hooks the code and the screenshot tool use.
+    for (const hook of ['name="overlayEnabled"', 'name="overlayForwardFilter"', 'name="overlayCardHoldSeconds"',
+      'name="overlayTableCommandsEnabled"', 'data-action="diagnostics"', 'data-action="testRoll"', 'data-action="commands"']) {
+      assert(html.includes(hook), `${locale}: ${hook}`);
+    }
+    // Each control has its label; each information icon is focusable and names its tooltip.
+    for (const [, id] of html.matchAll(/<(?:input|select) id="([\w-]+)"/g)) assert(html.includes(`<label for="${id}">`), `${locale}: ${id}`);
+    const infos = [...html.matchAll(/<i class="fa-solid fa-circle-info jn-info"([^>]*)>/g)].map(match => match[1]);
+    assert.equal(infos.length, 5, "enable, delay, table draws, table setup and the test roll");
+    for (const attributes of infos) {
+      assert(attributes.includes('tabindex="0"') && attributes.includes('role="img"'), locale);
+      const label = attributes.match(/aria-label="([^"]+)"/)?.[1], tooltip = attributes.match(/data-tooltip="([^"]+)"/)?.[1];
+      assert(label && label === tooltip, `${locale}: ${attributes}`);
+    }
+  }
+});
+
+test("without subscription news or a GM, the footer keeps only the connections button and the Twitch section disappears", async () => {
+  const template = await readFile(new URL("../templates/overlay.hbs", import.meta.url), "utf8");
+  const hbs = Handlebars.create(); hbs.registerHelper("localize", key => copy[key] ?? key);
+  game.user.isGM = false;
+  const panel = new OverlayPanel();
+  panel._diagnostics = accountAnswer();
+  const html = hbs.compile(template)(await panel._prepareContext());
+  assert.equal(html.match(/class="jn-section"/g).length, 2);
+  assert(!html.includes("overlayTableCommandsEnabled") && !html.includes('data-action="commands"'));
+  assert(!html.includes('data-action="subscription"'));
+  assert.equal(html.slice(html.indexOf("<footer")).match(/data-action="/g).length, 1);
+  assert(!html.includes(copy["JDRNINJA.overlay.diag.poll"]), "no command poll line for a player");
 });
 
 test("the overlay window is reused while open and gets a fresh instance after closing", async () => {

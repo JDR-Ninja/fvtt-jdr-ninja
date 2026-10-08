@@ -1,86 +1,123 @@
-<div class="standard-form jn-creatures">
-  <div class="jn-creature-compatibility" role="status" data-compatibility="{{compatibility.code}}">
-    <span class="badge"><i class="fa-solid {{compatibility.icon}}" aria-hidden="true"></i> {{compatibility.label}}</span>
-    <p>{{compatibility.current}}</p>
-    <p class="hint">{{localize "JDRNINJA.creatures.error.incompatibleSystem"}}</p>
-  </div>
-  <div class="jdr-ninja__status" aria-live="polite">
-    <strong>{{status}}</strong>
-  </div>
-  {{#if showSubscriptionLink}}<p><a href="{{subscriptionsUrl}}" target="_blank" rel="noopener noreferrer" data-jdr-subscriptions="creatures">{{localize "JDRNINJA.creatures.subscription"}}</a></p>{{/if}}
-  <div class="jdr-ninja__actions">
-    <button type="button" data-action="connections">{{localize "JDRNINJA.creatures.connections"}}</button>
-    <button type="button" data-action="check" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.check"}}</button>
-  </div>
-  {{#if error}}<p role="alert">{{error}}</p>{{/if}}
-  {{#if cooldown}}<p role="status">{{cooldownText}}</p>{{/if}}
-  {{#if hasCatalog}}
-    <fieldset {{#if busy}}disabled{{/if}}>
-      <legend>{{title}}</legend>
-      {{#each primaryFields}}
-        <div class="form-group">
-          <label for="{{id}}">{{label}}</label>
-          <select id="{{id}}" name="{{name}}" data-creature-option aria-invalid="{{error}}">
-            {{#if unavailableSelection}}<option selected value="{{value}}">{{value}} ({{localize "JDRNINJA.creatures.unavailableChoice"}})</option>{{/if}}
-            {{#each choices}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-          </select>
-          {{#if description}}<p class="hint">{{description}}</p>{{/if}}
+<div class="standard-form jn-layout jn-creatures">
+  <div class="jn-scroll">
+    <header class="jn-creature-header">
+      <div class="jn-creature-bar">
+        <div class="jn-toolbar jn-creature-states">
+          <span class="jn-pill jn-pill--{{compatibility.level}}" role="status" data-compatibility="{{compatibility.code}}"><i class="fa-solid {{compatibility.icon}}" aria-hidden="true"></i> {{compatibility.label}}</span>
+          <span class="jn-creature-status" aria-live="polite">{{#if status.pill}}<span class="jn-pill jn-pill--{{status.pill.level}}"><i class="fa-solid {{status.pill.icon}}" aria-hidden="true"></i> {{status.pill.label}}</span>{{/if}}</span>
         </div>
-      {{/each}}
-      {{#if recommendation}}<p>{{localize "JDRNINJA.creatures.recommendation"}} {{recommendation}}</p>{{/if}}
-      {{#if hasAdvanced}}
-        <details data-creature-advanced {{#if advanced}}open{{/if}}>
-          <summary>{{localize "JDRNINJA.creatures.advanced"}}</summary>
-          {{#each advancedFields}}
+        <div class="jn-toolbar jn-creature-tools">
+          <button type="button" data-action="connections"><i class="fa-solid fa-plug" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.connections"}}</button>
+          <button type="button" data-action="check" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.check"}}</button>
+        </div>
+      </div>
+      <p class="jn-muted jn-creature-system">{{compatibility.current}}<i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img" aria-label="{{localize "JDRNINJA.creatures.error.incompatibleSystem"}}" data-tooltip="{{localize "JDRNINJA.creatures.error.incompatibleSystem"}}"></i></p>
+    </header>
+    {{#if status.message}}<p class="notice notice-warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{status.message}}</p>{{/if}}
+    {{#if showSubscriptionLink}}<p class="jn-creature-link"><a href="{{subscriptionsUrl}}" target="_blank" rel="noopener noreferrer" data-jdr-subscriptions="creatures"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.subscription"}}</a></p>{{/if}}
+    {{#if error}}<p class="notice notice-error" role="alert"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> {{error}}</p>{{/if}}
+    {{#if cooldown}}<p class="notice notice-info" role="status"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> {{cooldownText}}</p>{{/if}}
+    {{#if hasCatalog}}
+      <div class="jn-section jn-creature-options" role="group" aria-label="{{title}}">
+        <div class="jn-grid-2">
+          {{#each primaryFields}}
             <div class="form-group">
-              <label for="{{id}}">{{label}}</label>
-              {{#if boolean}}
-                <input id="{{id}}" name="{{name}}" type="checkbox" data-creature-option {{#if value}}checked{{/if}} aria-invalid="{{error}}">
-              {{else}}
-                <select id="{{id}}" name="{{name}}" data-creature-option aria-invalid="{{error}}">
+              <label for="{{id}}">{{label}}{{#if error}} <i class="fa-solid fa-circle-exclamation jn-creature-invalid" aria-hidden="true"></i>{{/if}}</label>
+              <div class="form-fields">
+                <select id="{{id}}" name="{{name}}" data-creature-option aria-invalid="{{error}}" {{#if hint}}aria-describedby="{{id}}-hint"{{/if}} {{#if @root.busy}}disabled{{/if}}>
                   {{#if unavailableSelection}}<option selected value="{{value}}">{{value}} ({{localize "JDRNINJA.creatures.unavailableChoice"}})</option>{{/if}}
                   {{#each choices}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
                 </select>
-              {{/if}}
+              </div>
+              {{#if hint}}<p class="hint" id="{{id}}-hint">{{hint}}</p>{{/if}}
             </div>
           {{/each}}
+        </div>
+        {{#if hasAdvanced}}
+          <details class="jn-creature-advanced" data-creature-advanced {{#if advanced}}open{{/if}}>
+            <summary>{{localize "JDRNINJA.creatures.advanced"}}</summary>
+            <div class="jn-grid-2">
+              {{#each advancedFields}}
+                {{#if boolean}}
+                  <div class="form-group jn-creature-check">
+                    <div class="form-fields"><input id="{{id}}" name="{{name}}" type="checkbox" data-creature-option {{#if value}}checked{{/if}} aria-invalid="{{error}}" {{#if @root.busy}}disabled{{/if}}></div>
+                    <label for="{{id}}">{{label}}{{#if error}} <i class="fa-solid fa-circle-exclamation jn-creature-invalid" aria-hidden="true"></i>{{/if}}</label>
+                  </div>
+                {{else}}
+                  <div class="form-group">
+                    <label for="{{id}}">{{label}}{{#if error}} <i class="fa-solid fa-circle-exclamation jn-creature-invalid" aria-hidden="true"></i>{{/if}}</label>
+                    <div class="form-fields">
+                      <select id="{{id}}" name="{{name}}" data-creature-option aria-invalid="{{error}}" {{#if hint}}aria-describedby="{{id}}-hint"{{/if}} {{#if @root.busy}}disabled{{/if}}>
+                        {{#if unavailableSelection}}<option selected value="{{value}}">{{value}} ({{localize "JDRNINJA.creatures.unavailableChoice"}})</option>{{/if}}
+                        {{#each choices}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                      </select>
+                    </div>
+                    {{#if hint}}<p class="hint" id="{{id}}-hint">{{hint}}</p>{{/if}}
+                  </div>
+                {{/if}}
+              {{/each}}
+            </div>
+          </details>
+        {{/if}}
+      </div>
+      {{#if invalidOptions}}<p class="notice notice-error" role="alert"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.error.invalidOptions"}}</p>{{/if}}
+    {{/if}}
+    {{#if preview}}
+      <article class="jn-card jn-creature-preview" aria-labelledby="jn-{{kind}}-preview-name">
+        <header class="jn-creature-title">
+          <h3 id="jn-{{kind}}-preview-name">{{preview.name}}</h3>
+          <p class="jn-creature-meta">
+            <span><span class="jn-muted">{{localize "JDRNINJA.creatures.field.challengeRating"}}</span> <strong>{{preview.challengeRating}}</strong></span>
+            <span aria-hidden="true">·</span>
+            <span><span class="jn-muted">{{localize "JDRNINJA.creatures.ac"}}</span> <strong>{{preview.summary.ac}}</strong></span>
+            <span aria-hidden="true">·</span>
+            <span><span class="jn-muted">{{localize "JDRNINJA.creatures.hp"}}</span> <strong>{{preview.summary.hp}}</strong></span>
+          </p>
+        </header>
+        {{#if preview.changed}}<p class="notice notice-info"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.changed"}}</p>{{/if}}
+        <div class="jn-creature-biography">{{{preview.biography}}}</div>
+        <details class="jn-creature-rules">
+          <summary>{{localize "JDRNINJA.creatures.rules"}}</summary>
+          {{#each preview.entries}}<section class="jn-creature-entry"><h4>{{name}}</h4><div>{{{description}}}</div></section>{{/each}}
         </details>
-      {{/if}}
-    </fieldset>
-    {{#if invalidOptions}}<p role="alert">{{localize "JDRNINJA.creatures.error.invalidOptions"}}</p>{{/if}}
-    <div class="jdr-ninja__actions">
-      <button type="button" data-action="generate" {{#unless canGenerate}}disabled{{/unless}}>
-        {{#if regenerating}}{{localize "JDRNINJA.creatures.regenerate"}}{{else}}{{localize "JDRNINJA.creatures.generate"}}{{/if}}
-      </button>
-      {{#if busy}}<button type="button" data-action="cancel">{{localize "JDRNINJA.button.cancel"}}</button>{{/if}}
-    </div>
-  {{/if}}
-  {{#if preview}}
-    <section class="jn-creature-preview">
-      <h2>{{preview.name}}</h2>
-      <p>{{localize "JDRNINJA.creatures.field.challengeRating"}} {{preview.challengeRating}} · {{localize "JDRNINJA.creatures.ac"}} {{preview.summary.ac}} · {{localize "JDRNINJA.creatures.hp"}} {{preview.summary.hp}}</p>
-      {{#if preview.changed}}<p>{{localize "JDRNINJA.creatures.changed"}}</p>{{/if}}
-      <p>{{localize "JDRNINJA.creatures.manualLimit"}}</p>
-      <div class="jn-creature-biography">{{{preview.biography}}}</div>
-      <details><summary>{{localize "JDRNINJA.creatures.rules"}}</summary>
-        {{#each preview.entries}}<h3>{{name}}</h3><div>{{{description}}}</div>{{/each}}
-      </details>
-    </section>
-    <fieldset {{#if busy}}disabled{{/if}}>
-      <legend>{{localize "JDRNINJA.creatures.destination"}}</legend>
-      <p>{{localize "JDRNINJA.creatures.destinationHint"}}</p>
-      <p><strong>{{worldName}}</strong></p>
-      <div class="form-group"><label for="jn-{{kind}}-name">{{localize "JDRNINJA.creatures.actorName"}}</label>
-        <input id="jn-{{kind}}-name" name="importName" value="{{name}}" maxlength="256"></div>
-      <div class="form-group"><label for="jn-{{kind}}-folder">{{localize "JDRNINJA.creatures.actorFolder"}}</label>
-        <select id="jn-{{kind}}-folder" name="importFolder"><option value="">{{localize "JDRNINJA.creatures.rootFolder"}}</option>
-          {{#each folders}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
-        </select></div>
-    </fieldset>
-    <div class="jdr-ninja__actions">
-      <button type="button" data-action="create" {{#unless canCreate}}disabled{{/unless}}>{{localize "JDRNINJA.creatures.create"}}</button>
-      {{#if imported}}<span role="status">{{localize "JDRNINJA.creatures.imported"}}</span><button type="button" data-action="sheet">{{localize "JDRNINJA.creatures.sheet"}}</button>{{/if}}
-      <button type="button" data-action="dismiss" {{#if busy}}disabled{{/if}}>{{localize "JDRNINJA.creatures.dismiss"}}</button>
-    </div>
-  {{/if}}
+        <p class="jn-muted jn-creature-limit"><i class="fa-solid fa-hand" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.manualLimit"}}</p>
+      </article>
+      <section class="jn-section jn-creature-destination" aria-labelledby="jn-{{kind}}-destination">
+        <div class="jn-creature-head">
+          <h3 class="jn-section__title" id="jn-{{kind}}-destination"><i class="fa-solid fa-earth-europe" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.destination"}}{{#if worldName}} <span class="jn-muted jn-creature-world">· {{worldName}}</span>{{/if}}</h3>
+          {{#if imported}}<span class="jn-pill jn-pill--success" role="status"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.imported"}}</span>{{/if}}
+        </div>
+        <p class="jn-muted">{{localize "JDRNINJA.creatures.destinationHint"}}</p>
+        <div class="jn-grid-2">
+          <div class="form-group">
+            <label for="jn-{{kind}}-name">{{localize "JDRNINJA.creatures.actorName"}}</label>
+            <div class="form-fields"><input id="jn-{{kind}}-name" name="importName" value="{{name}}" maxlength="256" {{#if busy}}disabled{{/if}}></div>
+          </div>
+          <div class="form-group">
+            <label for="jn-{{kind}}-folder">{{localize "JDRNINJA.creatures.actorFolder"}}</label>
+            <div class="form-fields">
+              <select id="jn-{{kind}}-folder" name="importFolder" {{#if busy}}disabled{{/if}}>
+                <option value="">{{localize "JDRNINJA.creatures.rootFolder"}}</option>
+                {{#each folders}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+    {{/if}}
+  </div>
+  <footer class="form-footer jn-footer">
+    {{#if imported}}
+      <button type="button" class="bright" data-action="sheet"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.sheet"}}</button>
+    {{else if preview}}
+      <button type="button" class="bright" data-action="create" {{#unless canCreate}}disabled{{/unless}}><i class="fa-solid fa-user-plus" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.create"}}</button>
+    {{else}}
+      <button type="button" class="bright" data-action="generate" {{#unless canGenerate}}disabled{{/unless}}><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.generate"}}</button>
+    {{/if}}
+    {{#if preview}}
+      <button type="button" data-action="generate" {{#unless canGenerate}}disabled{{/unless}}><i class="fa-solid fa-dice" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.regenerate"}}</button>
+      <button type="button" data-action="dismiss" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-xmark" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.dismiss"}}</button>
+    {{/if}}
+    {{#if busy}}<button type="button" data-action="cancel"><i class="fa-solid fa-ban" aria-hidden="true"></i> {{localize "JDRNINJA.button.cancel"}}</button>{{/if}}
+  </footer>
 </div>

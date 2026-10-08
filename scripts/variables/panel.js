@@ -10,6 +10,10 @@ export const variableError = error => { const key = `${I18N}.variables.error.${e
   return game.i18n.has?.(key) === false ? VT("error.failed") : game.i18n.localize(key); };
 const ref = (scope, id) => ({ source: "variable", scope, id });
 const option = (value, selected, label = value) => ({ value, label, selected: value === selected });
+/** Pills for the window states. The colour never carries a state alone: the icon and the text say it too. */
+export const PILLS = {
+  online: { level: "success", icon: "fa-circle-check" }, offline: { level: "warning", icon: "fa-triangle-exclamation" },
+  writable: { level: "success", icon: "fa-pen" }, readOnly: { level: "neutral", icon: "fa-lock" } };
 
 export function typedValue(type, raw, source = "uuid", userId = "") {
   if (type === "number") { requireValue(raw.trim() !== ""); const value = Number(raw); requireValue(Number.isFinite(value), "outOfBounds"); return value; }
@@ -42,7 +46,7 @@ export class VariablePanel extends HandlebarsApplicationMixin(ApplicationV2) {
     window: { title: `${I18N}.variables.title`, icon: "fa-solid fa-sliders", resizable: true }, position: { width: 920, height: 720 },
     actions: Object.fromEntries(["scope", "switchTab", "select", "create", "save", "reload", "duplicate", "remove", "preview", "mutate", "entryAdd", "entryRemove", "entryUp", "entryDown", "insert", "openDocument", "controller", "reconcile"]
       .map(key => [key, function(event, target) { return this._action(key, target); }])) };
-  static PARTS = { body: { template: `modules/${MODULE_ID}/templates/variables.hbs`, scrollable: [""] } };
+  static PARTS = { body: { template: `modules/${MODULE_ID}/templates/variables.hbs`, scrollable: [".jn-scroll"] } };
   scope = "personal"; collection = "variables"; search = ""; draft = null; baseRevision = null; dirty = false; busy = false; message = "";
   /** A variable is written by its name alone; the id only stands in when the variable no longer exists. */
   label(scope, id) { return this.stores[scope]?.variables.find(v => v.id === id)?.name ?? id; }
@@ -62,7 +66,8 @@ export class VariablePanel extends HandlebarsApplicationMixin(ApplicationV2) {
     const controller = game.users.get(this.stores.world.controller);
     const context = { scope: this.scope, scopes: SCOPES.map(s => option(s, this.scope, VT(s))),
       tabs: ["variables", "lists"].map(s => option(s, this.collection, VT(s))), rows, search: this.search, writable, busy: this.busy,
-      status: VT(writable ? "writable" : "readOnly"), controllerName: controller?.name ?? VT("noController"), controllerOnline: VT(controller?.active ? "online" : "offline"),
+      status: VT(writable ? "writable" : "readOnly"), statusPill: PILLS[writable ? "writable" : "readOnly"],
+      controllerPill: PILLS[controller?.active ? "online" : "offline"], controllerName: controller?.name ?? VT("noController"), controllerOnline: VT(controller?.active ? "online" : "offline"),
       canAssign: variableService.fullGM() && (controller?.id === game.user.id || !controller?.active && variableService.candidate()?.id === game.user.id),
       controllers: Array.from(game.users.contents).filter(u => u.active && variableService.fullGM(u)).map(u => option(u.id, this.stores.world.controller, u.name)),
       stale: this.draft && this.baseRevision !== store.revision, uncertain: variableService.uncertain.has(this.scope), message: this.message, editor: null };
@@ -74,7 +79,7 @@ export class VariablePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   }
   editorContext(writable) {
     const d = this.draft, variable = this.collection === "variables", existing = this.stores[this.scope][this.collection].find(v => v.id === d.id);
-    const context = { ...d, variable, existing: Boolean(existing), readonlyType: Boolean(existing), writable,
+    const context = { ...d, variable, existing: Boolean(existing), readonlyType: Boolean(existing), writable, readOnly: !writable,
       kindOptions: ["stored", "list", "computed"].map(k => option(k, d.kind, VT(`kind.${k}`))),
       types: VALUE_TYPES.map(t => option(t, d.type, VT(`type.${t}`))), stored: d.kind === "stored", computed: d.kind === "computed", selection: d.kind === "list",
       numeric: d.type === "number", textual: d.type === "text", constraints: d.constraints ?? {},
@@ -90,7 +95,8 @@ export class VariablePanel extends HandlebarsApplicationMixin(ApplicationV2) {
     const list = d.list && this.stores[d.list.scope].lists.find(l => l.id === d.list.id);
     if (context.selection) context.entryChoices = (list?.entries ?? []).map(e => option(e.id, d.default, e.label));
     if (context.selection) context.currentEntryChoices = (list?.entries ?? []).map(e => option(e.id, existing?.current ?? d.current, e.label));
-    context.values = context.values.map(field => ({ ...field, numeric: d.type === "number", boolean: d.type === "boolean", document: DOCUMENT_TYPES.includes(d.type),
+    context.showValues = context.values.length > 0 || !variable;
+    context.values = context.values.map(field => ({ ...field, readOnly: !writable, numeric: d.type === "number", boolean: d.type === "boolean", document: DOCUMENT_TYPES.includes(d.type),
       valueText: DOCUMENT_TYPES.includes(d.type) ? field.value?.uuid ?? "" : field.value ?? "", unset: field.value === null,
       boolChoices: ["true", "false"].map(v => option(v, String(field.value))),
       sources: ["uuid", ...(d.type === "Token" ? ["selectedToken"] : d.type === "Actor" ? ["userCharacter"] : [])].map(v => option(v, field.value?.source ?? "uuid", VT(`source.${v}`))),

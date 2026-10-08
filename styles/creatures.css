@@ -1,0 +1,59 @@
+/* Creature generator windows. Shared components (layout, sections, cards, pills, grid, footer) live in module.css. */
+
+/* Header: the compatibility and access pills on one side, the secondary actions on the other, the system line below. */
+.jdr-ninja .jn-creature-header { display: flex; flex-direction: column; gap: 0.35rem; }
+.jdr-ninja .jn-creature-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.jdr-ninja .jn-creature-status { display: inline-flex; }
+.jdr-ninja .jn-creature-system { margin: 0; font-size: var(--font-size-12, 0.8rem); }
+.jdr-ninja .jn-creature-link { margin: 0; }
+.jdr-ninja .jn-creatures p.notice { margin: 0; }
+
+/* Options: a quiet disclosure for the advanced ones, a checkbox that stays next to its label. */
+.jdr-ninja .jn-creatures .jn-grid-2 { row-gap: 0.5rem; align-items: start; }
+.jdr-ninja .jn-creatures .form-group { min-width: 0; }
+.jdr-ninja .jn-creatures .form-group > .hint { margin: 0; }
+.jdr-ninja .jn-creature-check { flex-direction: row; justify-content: flex-start; gap: 0.5rem; }
+.jdr-ninja .jn-creature-check > label { flex: 0 1 auto; }
+.jdr-ninja .jn-creature-check > .form-fields { flex: 0 0 auto; }
+.jdr-ninja .jn-creature-advanced { margin-block-start: 0.5rem; }
+.jdr-ninja .jn-creature-advanced[open] > summary { margin-block-end: 0.5rem; }
+.jdr-ninja .jn-creature-advanced > summary,
+.jdr-ninja .jn-creature-rules > summary { cursor: pointer; font-weight: 600; }
+.jdr-ninja .jn-creature-advanced > summary:focus-visible,
+.jdr-ninja .jn-creature-rules > summary:focus-visible { outline: 2px solid var(--color-level-info); outline-offset: 2px; border-radius: 2px; }
+/* An invalid option is outlined, and its label also carries an icon, so the colour is never alone. */
+.jdr-ninja .jn-creatures [aria-invalid="true"] { outline: 2px solid var(--color-level-error); outline-offset: -1px; }
+.jdr-ninja .jn-creature-invalid { color: var(--color-level-error); }
+
+/* Preview: a stat block. Name, then the FP, AC and HP line, then the description and the collapsible rules. */
+.jdr-ninja .jn-creature-preview { overflow-wrap: anywhere; }
+.jdr-ninja .jn-creature-title { display: flex; flex-direction: column; gap: 0.15rem; padding-block-end: 0.5rem; border-block-end: 1px solid var(--jn-line); }
+.jdr-ninja .jn-creature-title h3 { margin: 0; padding: 0; border: none; font-size: var(--font-size-20, 1.25rem); line-height: 1.2;
+  color: var(--color-text-emphatic, var(--color-text-primary)); }
+.jdr-ninja .jn-creature-meta { display: flex; flex-wrap: wrap; gap: 0.15rem 0.5rem; margin: 0; }
+.jdr-ninja .jn-creature-meta strong { color: var(--color-text-primary); }
+.jdr-ninja .jn-creature-limit { margin: 0; font-size: var(--font-size-12, 0.8rem); }
+.jdr-ninja .jn-creature-limit > i { margin-inline-end: 0.25rem; }
+.jdr-ninja .jn-creature-preview .notice { margin: 0; }
+
+/* Imported descriptive HTML only gets basic typography: no colour, size or font of its own. */
+.jdr-ninja :is(.jn-creature-biography, .jn-creature-entry) { line-height: 1.45; overflow-wrap: anywhere; }
+.jdr-ninja :is(.jn-creature-biography, .jn-creature-entry) > :first-child { margin-block-start: 0; }
+.jdr-ninja :is(.jn-creature-biography, .jn-creature-entry) > :last-child { margin-block-end: 0; }
+.jdr-ninja :is(.jn-creature-biography, .jn-creature-entry) :is(p, ul, ol, blockquote, table) { margin-block: 0 0.5rem; }
+.jdr-ninja :is(.jn-creature-biography, .jn-creature-entry) :is(ul, ol) { padding-inline-start: 1.25rem; }
+.jdr-ninja :is(.jn-creature-biography, .jn-creature-entry) :is(h1, h2, h3, h4, h5, h6) { margin: 0.5rem 0 0.25rem; padding: 0; border: none;
+  font-family: inherit; font-size: inherit; font-weight: 700; color: inherit; }
+.jdr-ninja :is(.jn-creature-biography, .jn-creature-entry) :is(img, video) { max-width: 100%; height: auto; }
+.jdr-ninja :is(.jn-creature-biography, .jn-creature-entry) table { width: 100%; border-collapse: collapse; }
+.jdr-ninja :is(.jn-creature-biography, .jn-creature-entry) :is(th, td) { padding: 0.15rem 0.4rem; border: 1px solid var(--jn-line); text-align: start; }
+.jdr-ninja .jn-creature-entry { margin-block-start: 0.5rem; }
+.jdr-ninja .jn-creature-entry > h4 { margin: 0 0 0.15rem; padding: 0; border: none; font-family: inherit; font-size: inherit; font-weight: 700; }
+
+/* "Create in this world": a section whose title row also carries the creation state. */
+.jdr-ninja .jn-creature-destination { padding-block-start: 1rem; border-block-start: 1px solid var(--jn-line); }
+.jdr-ninja .jn-creature-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.jdr-ninja .jn-creature-destination p { margin: 0; }
+.jdr-ninja .jn-creature-world { font-weight: 400; font-size: var(--font-size-12, 0.8rem); }
+
+@media (prefers-reduced-motion: reduce) { .jdr-ninja .jn-creatures .fa-spin { animation: none; } }

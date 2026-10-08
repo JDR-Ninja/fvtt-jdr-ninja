@@ -30,7 +30,7 @@ globalThis.game = { user, world: { id: "fixture" }, users: { contents: [user], g
   actors: collection, journal: collection, macros: collection, scenes: collection, playlists: collection, tables: collection, combats: collection };
 globalThis.canvas = {};
 globalThis.ui = { notifications: { warn: () => {} } };
-const { VariablePanel, VT, variableError, dependencies, typedValue } = await import("../scripts/variables/panel.js");
+const { VariablePanel, VT, variableError, dependencies, typedValue, PILLS } = await import("../scripts/variables/panel.js");
 const { MacroArgumentsPanel } = await import("../scripts/variables/macro-panel.js");
 
 test("advanced menus are available to players, use native user storage and have no activation preference", () => {
@@ -250,4 +250,161 @@ test("typed editor accepts false/zero without truthiness coercion and recipes st
   assert.equal(typedValue("number", "0"), 0); assert.equal(typedValue("boolean", "false"), false); assert.throws(() => typedValue("number", ""));
   assert.deepEqual(typedValue("Actor", "", "userCharacter", "user"), { source: "userCharacter", userId: "user" });
   assert.deepEqual(typedValue("Token", "", "selectedToken"), { source: "selectedToken" });
+});
+
+// Window structure: native V14 form groups, segmented tabs, state pills and a fixed footer, with every hook the code, the tools and the screenshots use.
+const PILL = /<span class="jn-pill jn-pill--(\w+)"><i class="fa-solid ([\w-]+)" aria-hidden="true"><\/i>([^<]*)<\/span>/g;
+const countOf = (html, pattern) => (html.match(pattern) ?? []).length;
+const actions = html => new Set([...html.matchAll(/data-action="(\w+)"/g)].map(match => match[1]));
+async function renderEnglish(template, context) {
+  const locale = JSON.parse(await readFile(new URL("../lang/en.json", import.meta.url), "utf8"));
+  game.i18n.localize = key => locale[key] ?? key; Handlebars.registerHelper("localize", key => locale[key] ?? key);
+  return { html: Handlebars.compile(template)(context), locale };
+}
+const heroInspiration = { id: "hero-inspiration", name: "Hero inspiration", type: "boolean", kind: "computed", constraints: {}, expression: { op: "literal", type: "boolean", value: true } };
+
+test("the variables window uses tabs, a footer with one primary action and no fieldset, and keeps its hooks", async () => {
+  const template = await readFile(new URL("../templates/variables.hbs", import.meta.url), "utf8");
+  setVariables([heroInspiration, numberVariable("ritual", "Ritual countdown")], []);
+  try {
+    const panel = new VariablePanel(); panel.scope = "world"; panel.draft = copy(heroInspiration); panel.baseRevision = 0;
+    const { html } = await renderEnglish(template, await panel._prepareContext());
+    assert(!/<fieldset|<legend/.test(html), "sections replace fieldsets");
+    // Scope and list tabs are real tabs: a tab list, tab roles, aria-selected and no pressed state on a tab.
+    assert.equal(countOf(html, /role="tablist"/g), 2); assert.equal(countOf(html, /role="tab"/g), 4);
+    assert.equal(countOf(html, /class="jn-tabs" role="tablist"/g), 2);
+    assert(html.includes('role="tab" data-action="scope" data-value="world" aria-selected="true"'));
+    assert(html.includes('role="tab" data-action="scope" data-value="personal" aria-selected="false"'));
+    assert(html.includes('role="tab" data-action="switchTab" data-value="variables" aria-selected="true"'));
+    assert(!/role="tab"[^>]*aria-pressed/.test(html));
+    // The selected record keeps aria-pressed and the value cells the live refresh patches in place.
+    assert(/data-action="select" data-id="hero-inspiration" data-row-name="Hero inspiration" aria-pressed="true"/.test(html));
+    assert(/data-action="select" data-id="ritual" data-row-name="Ritual countdown" aria-pressed="false"/.test(html));
+    assert(html.includes('data-state-id="hero-inspiration"') && html.includes('data-state-id="ritual"'));
+    // The window actions live in the footer: one primary button, the destructive one last and in the error colour.
+    const footer = html.slice(html.indexOf('<footer class="form-footer jn-footer">')); assert(footer.includes("</footer>"));
+    assert.equal(countOf(html, /class="bright"/g), 1); assert(footer.includes('class="bright" data-action="save"'));
+    assert(footer.includes('class="jn-danger" data-action="remove"'));
+    const order = ["save", "preview", "duplicate", "reload", "remove"].map(name => footer.indexOf(`data-action="${name}"`));
+    assert(order.every(position => position > 0) && order.every((position, index) => index === 0 || position > order[index - 1]), "footer order");
+    assert(!html.slice(0, html.indexOf("<footer")).includes('data-action="save"') && !html.slice(0, html.indexOf("<footer")).includes('data-action="remove"'));
+    for (const hook of ["scope", "switchTab", "select", "create", "save", "preview", "duplicate", "reload", "remove", "insert", "controller"]) assert(actions(html).has(hook), hook);
+    for (const hook of ['data-field="name"', 'data-field="type"', 'data-field="kind"', 'data-field="expression"', 'name="reference"', 'name="search"', 'name="controller"']) assert(html.includes(hook), hook);
+    assert(html.includes('class="jn-variable-columns"')); assert(html.includes("data-stale") && html.includes('data-message role="status"'));
+    // Every field keeps an associated label.
+    for (const id of ["jn-variable-name", "jn-variable-type", "jn-variable-kind", "jn-variable-expression"]) assert(html.includes(`for="${id}"`) && html.includes(`id="${id}"`), id);
+    // A new definition has nothing to delete, and a window with no draft has no footer.
+    panel.draft = { id: "new", name: "", type: "number", kind: "stored", current: 0, default: 0, constraints: {} };
+    const created = (await renderEnglish(template, await panel._prepareContext())).html;
+    assert(!created.includes('data-action="remove"')); assert.equal(countOf(created, /class="bright"/g), 1);
+    panel.draft = null;
+    const idle = (await renderEnglish(template, await panel._prepareContext())).html;
+    assert(!idle.includes("<footer") && !idle.includes('class="bright"')); assert(idle.includes("JDRNINJA") === false);
+  } finally { setVariables([], []); }
+});
+test("the world controller and the write state show as pills whose colour, icon and text agree", async () => {
+  const template = await readFile(new URL("../templates/variables.hbs", import.meta.url), "utf8");
+  assert.deepEqual(Object.keys(PILLS).sort(), ["offline", "online", "readOnly", "writable"]);
+  assert.deepEqual([PILLS.online.level, PILLS.offline.level, PILLS.writable.level, PILLS.readOnly.level], ["success", "warning", "success", "neutral"]);
+  assert.equal(new Set(Object.values(PILLS).map(pill => pill.icon)).size, 4, "each state has its own icon");
+  const panel = new VariablePanel(); panel.scope = "world";
+  const pills = async () => { const { html, locale } = await renderEnglish(template, await panel._prepareContext());
+    return { locale, found: [...html.matchAll(PILL)].map(([, level, icon, text]) => ({ level, icon, text })) }; };
+  try {
+    let { locale, found } = await pills();
+    assert.deepEqual(found, [{ level: "success", icon: PILLS.writable.icon, text: locale["JDRNINJA.variables.writable"] },
+      { level: "success", icon: PILLS.online.icon, text: locale["JDRNINJA.variables.online"] }]);
+    // The controller goes offline: the window turns read-only and says so with a warning and a neutral pill.
+    user.active = false;
+    ({ found } = await pills());
+    assert.deepEqual(found, [{ level: "neutral", icon: PILLS.readOnly.icon, text: locale["JDRNINJA.variables.readOnly"] },
+      { level: "warning", icon: PILLS.offline.icon, text: locale["JDRNINJA.variables.offline"] }]);
+    const context = await panel._prepareContext(); assert.equal(context.controllerPill, PILLS.offline); assert.equal(context.statusPill, PILLS.readOnly);
+    // With no assigned GM the controller reads as offline too.
+    stored.world.controller = "gone";
+    assert.equal((await panel._prepareContext()).controllerPill, PILLS.offline);
+  } finally { user.active = true; stored.world.controller = "gm"; }
+});
+test("a read-only editor disables its controls and offers no write action", async () => {
+  const template = await readFile(new URL("../templates/variables.hbs", import.meta.url), "utf8");
+  const list = { id: "l", name: "List", type: "number", entries: [{ id: "a", label: "A", value: 1 }, { id: "b", label: "B", value: 2 }] };
+  stored.world.lists = [list]; setVariables([numberVariable("w1", "Level")], []); user.active = false;
+  try {
+    const panel = new VariablePanel(); panel.scope = "world"; panel.baseRevision = 0;
+    const open = async (collection, record) => { panel.collection = collection; panel.draft = copy(record); return (await renderEnglish(template, await panel._prepareContext())).html; };
+    const variable = await open("variables", stored.world.variables[0]);
+    assert(/<input id="jn-variable-name"[^>]*disabled/.test(variable)); assert(/<select id="jn-variable-kind"[^>]*disabled/.test(variable));
+    assert(/<input id="jn-value-default-value"[^>]*disabled/.test(variable)); assert(/name="operation"[^>]*disabled/.test(variable) && /data-action="mutate" disabled/.test(variable));
+    for (const hidden of ["save", "duplicate", "remove", "create"]) assert(!actions(variable).has(hidden), hidden);
+    assert(actions(variable).has("preview") && actions(variable).has("reload")); assert.equal(countOf(variable, /class="bright"/g), 0);
+    const entries = await open("lists", list);
+    assert(/data-action="entryAdd" disabled/.test(entries)); assert(/data-action="entryRemove"[^>]*disabled/.test(entries));
+    assert(/data-action="entryUp" data-id="a"[^>]*disabled/.test(entries) && /data-action="entryDown" data-id="b"[^>]*disabled/.test(entries));
+  } finally { user.active = true; stored.world.lists = []; setVariables([], []); }
+});
+test("list entries and value cards keep their value hooks, labels and move controls", async () => {
+  const template = await readFile(new URL("../templates/variables.hbs", import.meta.url), "utf8");
+  const list = { id: "l", name: "List", type: "number", entries: [{ id: "a", label: "A", value: 1 }, { id: "b", label: "B", value: 2 }] };
+  stored.personal.lists = [list];
+  try {
+    const panel = new VariablePanel(); panel.collection = "lists"; panel.draft = copy(list); panel.baseRevision = 0;
+    const { html, locale } = await renderEnglish(template, await panel._prepareContext());
+    assert.equal(countOf(html, /data-value-key="/g), 2); assert(html.includes('data-value-key="a"') && html.includes('data-value-key="b"'));
+    for (const key of ["a", "b"]) for (const field of ["label", "value"]) assert(html.includes(`id="jn-value-${key}-${field}"`) && html.includes(`for="jn-value-${key}-${field}"`) && html.includes(`data-value-field="${field}"`));
+    // Icon-only controls carry their name and tooltip; the first entry cannot move up, the last cannot move down.
+    for (const [action, key] of [["entryUp", "up"], ["entryDown", "down"], ["entryRemove", "remove"]]) {
+      const text = Handlebars.escapeExpression(locale[`JDRNINJA.variables.${key}`]);
+      assert.equal(countOf(html, new RegExp(`data-action="${action}" data-id="[ab]" aria-label="${text}" data-tooltip="${text}"`, "g")), 2, action);
+    }
+    assert(/data-action="entryUp" data-id="a"[^>]*disabled/.test(html) && !/data-action="entryUp" data-id="b"[^>]*disabled/.test(html));
+    assert(/data-action="entryDown" data-id="b"[^>]*disabled/.test(html) && !/data-action="entryDown" data-id="a"[^>]*disabled/.test(html));
+    assert(/class="jn-icon-button jn-danger" data-action="entryRemove"/.test(html));
+    assert(actions(html).has("entryAdd") && html.indexOf('data-value-key="b"') < html.indexOf('data-action="entryAdd"'));
+    assert(!/<fieldset|<legend/.test(html));
+  } finally { stored.personal.lists = []; }
+});
+test("the macro window shows its arguments as a table with a footer, and keeps every hook", async () => {
+  const template = await readFile(new URL("../templates/macro-arguments.hbs", import.meta.url), "utf8");
+  const declaration = { version: 1, arguments: [{ name: "target", type: "Token", required: true }, { name: "amount", type: "number", required: true, default: 5 },
+    { name: "damageType", type: "text", required: false, default: "fire" }] };
+  const macro = { id: "m", name: "Deal damage", type: "script", canExecute: true, testUserPermission: () => true, getFlag: () => declaration };
+  const previous = game.macros; game.macros = { contents: [macro], get: id => id === "m" ? macro : undefined };
+  try {
+    const panel = new MacroArgumentsPanel(); panel.macroId = "m"; panel.draft = copy(declaration); panel.base = JSON.stringify(declaration);
+    const { html, locale } = await renderEnglish(template, await panel._prepareContext());
+    assert(!/<fieldset|<legend/.test(html), "no fieldset per argument");
+    assert(html.includes('<table class="jn-arguments">')); assert.equal(countOf(html, /<th scope="col"/g), 5);
+    assert.equal(countOf(html, /<tr data-argument="\d">/g), 3); for (const index of [0, 1, 2]) assert(html.includes(`<tr data-argument="${index}">`));
+    for (const field of ["name", "type", "required", "hasDefault", "default"]) assert.equal(countOf(html, new RegExp(`data-arg-field="${field}"`, "g")), 3, field);
+    assert(html.includes('value="fire"') && html.includes('value="5"'));
+    // Removing is an icon button in the error colour, named and with a tooltip, one per row, keeping the index it removes.
+    const remove = Handlebars.escapeExpression(locale["JDRNINJA.variables.remove"]);
+    for (const index of [0, 1, 2]) assert(html.includes(`class="jn-icon-button jn-danger" data-action="remove" data-index="${index}" aria-label="${remove}" data-tooltip="${remove}"`), `remove ${index}`);
+    // Every table control is named, since the column headers are not labels.
+    assert.equal(countOf(html, /<input type="text" maxlength="64" data-arg-field="name"[^>]*aria-label="[^"]+"/g), 3);
+    assert.equal(countOf(html, /<select data-arg-field="type" aria-label="[^"]+"/g), 3);
+    // The picker sits in a toolbar, "Add argument" under the table, the window actions in the footer.
+    assert(/<div class="jn-toolbar jn-macro-picker">\s*<select name="macro"/.test(html) && html.includes('data-action="load"'));
+    const footerAt = html.indexOf('<footer class="form-footer jn-footer">'); assert(footerAt > 0);
+    assert(html.indexOf("</table>") < html.indexOf('data-action="add"') && html.indexOf('data-action="add"') < footerAt);
+    const footer = html.slice(footerAt);
+    assert.equal(countOf(html, /class="bright"/g), 1); assert(footer.includes('class="bright" data-action="save"'));
+    assert(footer.includes('class="jn-danger" data-action="disable"')); assert(footer.indexOf('data-action="save"') < footer.indexOf('data-action="disable"'));
+    assert(html.includes(`<pre class="jn-code"><code>${Handlebars.escapeExpression("const args = scope.jdrNinja.arguments;")}`));
+    assert(html.includes('data-argument') && html.includes('role="status"'));
+    // Without an argument there is no table, only the add button; without a macro there is nothing to save.
+    panel.draft = { version: 1, arguments: [] };
+    const bare = (await renderEnglish(template, await panel._prepareContext())).html;
+    assert(!bare.includes("<table") && actions(bare).has("add") && actions(bare).has("save"));
+    panel.macroId = "";
+    const idle = (await renderEnglish(template, await panel._prepareContext())).html;
+    assert(!idle.includes("<footer") && !idle.includes("<table") && !actions(idle).has("add") && actions(idle).has("load"));
+  } finally { game.macros = previous; }
+});
+test("the window strings exist in every language and the old argument legend is gone", async () => {
+  for (const lang of ["fr", "en", "de", "es", "it"]) {
+    const locale = JSON.parse(await readFile(new URL(`../lang/${lang}.json`, import.meta.url), "utf8"));
+    for (const key of ["values", "arguments", "online", "offline", "writable", "readOnly", "up", "down", "remove", "openDocument"]) assert(locale[`JDRNINJA.variables.${key}`], `${lang} ${key}`);
+    assert(!("JDRNINJA.variables.argument" in locale), lang);
+  }
 });

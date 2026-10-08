@@ -9,6 +9,23 @@ export const CT = key => game.i18n.localize(`${I18N}.creatures.${key}`);
 export const creatureMessage = code => CT(`error.${code}`);
 const primaryNpc = new Set(["presetId", "speciesId", "challengeRating", "nameGeneratorId"]);
 
+/** The pill level of every state is derived here, so the template only renders the level it receives. */
+export const PILL_ICONS = Object.freeze({ success: "fa-circle-check", warning: "fa-triangle-exclamation", error: "fa-circle-xmark",
+  info: "fa-circle-info", neutral: "fa-circle-minus" });
+const COMPATIBILITY_LEVELS = Object.freeze({ compatible: "success", versionUnsupported: "warning", dndRequired: "error" });
+const ACCESS_LEVELS = Object.freeze({ available: "success", checking: "info", notChecked: "neutral" });
+/** Compatible is success, an untested version warns, another game system cannot import at all. */
+export const compatibilityLevel = code => COMPATIBILITY_LEVELS[code] ?? "neutral";
+/**
+ * A clean access state is a pill. Anything else is a message (a restriction, a denial or a failure): it shows once as a
+ * notice, and the last failure keeps its own alert instead of repeating here.
+ */
+export function accessStatus(access, failure = "") {
+  const level = ACCESS_LEVELS[access];
+  if (level) return { pill: { level, icon: access === "checking" ? "fa-spinner fa-spin" : PILL_ICONS[level], label: CT(`status.${access}`) }, message: "" };
+  return { pill: null, message: access === failure ? "" : creatureMessage(access) };
+}
+
 export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   static instances = new Set();
   static instance = null;
@@ -35,7 +52,8 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
       connections: CreaturePanel.prototype._connections,
     },
   };
-  static PARTS = { body: { template: `modules/${MODULE_ID}/templates/creatures.hbs` } };
+  /** The content scrolls inside the window while the footer stays: its scroll position survives each render. */
+  static PARTS = { body: { template: `modules/${MODULE_ID}/templates/creatures.hbs`, scrollable: [".jn-scroll"] } };
   _catalog = null;
   _options = {};
   _controller = null;
@@ -55,14 +73,21 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   async _prepareContext() {
     const restriction = creatureClient.local();
     const validation = this._catalog ? optionErrors(this._catalog, this._options, this.kind) : [];
-    const fields = this._catalog ? OPTION_FIELDS[this.kind].map(field => ({
-      name: field, id: `jn-${this.kind}-${field}`, label: CT(`field.${field}`), value: this._options[field],
-      advanced: this.kind === "npc" && !primaryNpc.has(field), boolean: field === "includeSecret",
-      error: validation.includes(field) || this._fieldErrors.includes(field),
-      choices: (this._catalog.choices[field] ?? []).map(choice => ({ ...choice, selected: choice.id === this._options[field] })),
-      description: this._catalog.choices[field]?.find(choice => choice.id === this._options[field])?.description ?? "",
-      unavailableSelection: field !== "includeSecret" && !this._catalog.choices[field]?.some(c => c.id === this._options[field]),
-    })) : [];
+    const preset = this._catalog?.constraints.presets?.find(p => p.id === this._options.presetId);
+    // The selected role or profile explains itself under its field, and the recommended FP sits under the FP.
+    const hint = (field, description) => [description, field === "challengeRating" && preset?.recommendedChallengeRating
+      ? `${CT("recommendation")} ${preset.recommendedChallengeRating}` : ""].filter(Boolean).join(" ");
+    const fields = this._catalog ? OPTION_FIELDS[this.kind].map(field => {
+      const description = this._catalog.choices[field]?.find(choice => choice.id === this._options[field])?.description ?? "";
+      return {
+        name: field, id: `jn-${this.kind}-${field}`, label: CT(`field.${field}`), value: this._options[field],
+        advanced: this.kind === "npc" && !primaryNpc.has(field), boolean: field === "includeSecret",
+        error: validation.includes(field) || this._fieldErrors.includes(field),
+        choices: (this._catalog.choices[field] ?? []).map(choice => ({ ...choice, selected: choice.id === this._options[field] })),
+        description, hint: hint(field, description),
+        unavailableSelection: field !== "includeSecret" && !this._catalog.choices[field]?.some(c => c.id === this._options[field]),
+      };
+    }) : [];
     const delay = Math.ceil(creatureClient.remainingDelay() / 1000);
     const access = restriction ?? (this._controller ? "checking" : this._error || (creatureClient.access?.allowed ? "available" : creatureClient.access?.reason || "notChecked"));
     const preview = this._preview ? {
@@ -72,10 +97,10 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
       summary: this._preview.source.records.find(row => row.type === "actor"),
       changed: Object.keys(this._options).some(key => this._preview.requestedOptions[key] !== this._options[key]),
     } : null;
-    const preset = this._catalog?.constraints.presets?.find(p => p.id === this._options.presetId);
-    return { kind: this.kind, title: CT(this.kind), compatibility: compatibilityContext(), enabled: creatureClient.enabled(), busy: Boolean(this._controller),
+    const compatibility = compatibilityContext(), level = compatibilityLevel(compatibility.code);
+    return { kind: this.kind, title: CT(this.kind), compatibility: { ...compatibility, level, icon: PILL_ICONS[level] }, enabled: creatureClient.enabled(), busy: Boolean(this._controller),
       subscriptionsUrl: SUBSCRIPTIONS_URL, showSubscriptionLink: creatureClient.needsSubscription(this._error),
-      status: ["available", "checking", "notChecked"].includes(access) ? CT(`status.${access}`) : creatureMessage(access),
+      status: accessStatus(access, this._error),
       error: this._error ? creatureMessage(this._error) : "", delay, cooldown: delay > 0,
       cooldownText: game.i18n.format(`${I18N}.creatures.cooldown`, { seconds: delay }),
       primaryFields: fields.filter(field => !field.advanced), advancedFields: fields.filter(field => field.advanced),
@@ -83,8 +108,7 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
       invalidOptions: validation.length > 0, canGenerate: !restriction && !this._controller && this._catalog && !validation.length && !delay && creatureClient.access?.allowed === true,
       canCreate: Boolean(preview && !restriction && !this._controller && !this._actor), preview,
       imported: Boolean(this._actor), name: this._name, folder: this._folder, worldName: game.world?.title ?? game.world?.id ?? "",
-      folders: (game.folders?.contents ?? []).filter(folder => folder.type === "Actor").map(folder => ({ id: folder.id, name: folder.name, selected: folder.id === this._folder })),
-      recommendation: preset?.recommendedChallengeRating ?? "", regenerating: Boolean(preview) };
+      folders: (game.folders?.contents ?? []).filter(folder => folder.type === "Actor").map(folder => ({ id: folder.id, name: folder.name, selected: folder.id === this._folder })) };
   }
   _onRender(context, options) {
     super._onRender?.(context, options);

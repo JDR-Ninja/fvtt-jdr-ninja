@@ -1,63 +1,79 @@
-/* Foundry owns colours and control styling in both themes. Only layout is scoped here. */
-.jdr-ninja .jdr-ninja__connections { gap: 1rem; }
-.jdr-ninja .jdr-ninja__connections p { margin-block: 0.5rem; }
-.jdr-ninja .jdr-ninja__actions,
-.jdr-ninja .jdr-ninja__status { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-.jdr-ninja .jdr-ninja__actions button { flex: 1 1 auto; }
-.jdr-ninja .jdr-ninja__connections fieldset { min-width: 0; }
-.jdr-ninja .jdr-ninja__connections details { margin-block: 0.75rem; }
-.jdr-ninja .jdr-ninja__connections summary { cursor: pointer; }
-.jdr-ninja .jdr-ninja__connections .badge { border: 1px solid; border-radius: 0.35rem; padding: 0.2rem 0.5rem; }
-.jdr-ninja .jdr-ninja__connections .notice { border-inline-start: 3px solid; padding-inline: 0.75rem; }
-.jdr-ninja .jdr-ninja__code { font-size: 1.3em; letter-spacing: 0.1em; }
+/*
+ * Shared components for every module window. Foundry owns colours: only its theme variables are used,
+ * mixed with transparency for tints and lines, so the light and dark themes both follow.
+ * Window-specific rules live in connections.css, atlas-overlay.css, creatures.css and variables.css.
+ */
+.jdr-ninja {
+  --jn-line: color-mix(in srgb, var(--color-text-primary) 14%, transparent);
+  --jn-surface: color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+  --jn-surface-strong: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
+  --jn-radius: 6px;
+}
 
-/* Creature windows inherit Foundry colours; selected descriptive HTML has no imported styles. */
-.jdr-ninja .jn-creatures { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 0.75rem; }
-.jdr-ninja .jn-creatures fieldset { min-width: 0; }
-.jdr-ninja .jn-creature-preview { overflow-wrap: anywhere; }
-.jdr-ninja .jn-creature-preview table { width: 100%; }
-.jdr-ninja .jn-creatures [aria-invalid="true"] { outline: 2px solid currentColor; }
-.jdr-ninja .jn-creatures details { margin-block: 0.5rem; }
-.jdr-ninja .jn-creature-compatibility .badge { display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid; border-radius: 0.35rem; padding: 0.2rem 0.5rem; }
+/* Window frame: content scrolls, the footer stays. Container queries follow the window, not the screen. */
+.jdr-ninja .jn-layout { display: flex; flex-direction: column; gap: 0.75rem; height: 100%; min-height: 0; container-type: inline-size; }
+.jdr-ninja .jn-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
+.jdr-ninja .jn-footer { flex: none; display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding-block-start: 0.75rem; border-block-start: 1px solid var(--jn-line); }
+.jdr-ninja .jn-footer > button { flex: 1 1 0; min-width: max-content; }
 
-/* Advanced controls retain Foundry's native theme and focus indicators. */
-.jdr-ninja .jn-variables { display: flex; flex-direction: column; gap: 0.65rem; min-height: 0; overflow: auto; }
-.jdr-ninja .jn-variable-nav, .jdr-ninja .jn-variable-inline, .jdr-ninja .jn-variable-controller { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-.jdr-ninja .jn-variable-nav button[aria-pressed="true"], .jdr-ninja .jn-variable-row[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: -2px; }
-.jdr-ninja .jn-variable-columns { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(18rem, 2fr); gap: 1rem; min-height: 0; }
-.jdr-ninja .jn-variable-editor, .jdr-ninja .jn-variable-records { min-width: 0; }
-.jdr-ninja .jn-variable-row { display: flex; flex-direction: column; align-items: flex-start; height: auto; width: 100%; text-align: start; white-space: normal; gap: 0.25rem; margin-block: 0.4rem; padding: 0.5rem; overflow-wrap: anywhere; }
-.jdr-ninja .jn-variables label { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin-block: 0.5rem; }
-.jdr-ninja .jn-variables label input:not([type="checkbox"]), .jdr-ninja .jn-variables label select, .jdr-ninja .jn-variables textarea { flex: 1 1 12rem; width: 100%; min-width: 0; }
-.jdr-ninja .jn-variables fieldset { min-width: 0; margin-block: 0.5rem; }
-.jdr-ninja .jn-variables pre { overflow: auto; }
-/* Core styles inline code as a no-wrap chip: a code sample keeps its lines and wraps inside the window. */
-.jdr-ninja .jn-variables pre code { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
-.jdr-ninja .jn-variable-inline > select { flex: 1; min-width: 0; }
-.jdr-ninja .jn-variables [hidden] { display: none; }
-@media (max-width: 680px) { .jdr-ninja .jn-variable-columns { grid-template-columns: 1fr; } }
+/* Sections replace nested fieldsets: a title, some space and a light rule between two sections. */
+.jdr-ninja .jn-section { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.jdr-ninja .jn-section + .jn-section { padding-block-start: 1rem; border-block-start: 1px solid var(--jn-line); }
+.jdr-ninja .jn-section__title { display: flex; align-items: center; gap: 0.5rem; margin: 0; padding: 0; border: none;
+  font-size: var(--font-size-16, 1rem); font-weight: 600; color: var(--color-text-emphatic, var(--color-text-primary)); }
+.jdr-ninja .jn-section__title > i { color: var(--color-text-secondary); width: 1.1em; text-align: center; }
 
-/* Atlas keeps native Foundry control colours, with no separate palette. */
-.jdr-ninja-atlas .atlas-sync { display: flex; flex-direction: column; gap: 0.75rem; height: 100%; min-height: 0; }
-.jdr-ninja-atlas .atlas-sync__topbar { display: flex; flex-direction: column; gap: 0.75rem; }
-.jdr-ninja-atlas .atlas-sync__status,
-.jdr-ninja-atlas .atlas-sync__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-.jdr-ninja-atlas .atlas-sync__field { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; }
-.jdr-ninja-atlas .atlas-sync__toggle { display: flex; align-items: center; gap: 0.35rem; }
-.jdr-ninja-atlas .atlas-sync__rows { list-style: none; padding: 0; margin: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
-.jdr-ninja-atlas .atlas-sync__row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.5rem; border: 1px solid; border-radius: 0.35rem; }
-.jdr-ninja-atlas .atlas-sync__avatar { width: 2rem; height: 2rem; object-fit: cover; flex: 0 0 auto; }
-.jdr-ninja-atlas .atlas-sync__row-main { display: flex; flex-direction: column; flex: 1; min-width: 6rem; overflow-wrap: anywhere; }
-.jdr-ninja-atlas .atlas-sync__row-actions { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.jdr-ninja-atlas .badge { border: 1px solid; border-radius: 0.35rem; padding: 0.2rem 0.5rem; }
-.jdr-ninja-atlas .notice { border-inline-start: 3px solid; padding-inline: 0.75rem; }
-button.jdr-ninja-atlas-open { width: 100%; margin-block-start: 0.25rem; }
+.jdr-ninja .jn-card { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; padding: 0.75rem;
+  background: var(--jn-surface); border: 1px solid var(--jn-line); border-radius: var(--jn-radius); }
 
-.jdr-ninja-overlay .jdr-ninja__overlay { display: flex; flex-direction: column; gap: 0.75rem; }
-.jdr-ninja-overlay fieldset { min-width: 0; }
-.jdr-ninja-overlay .notice { border-inline-start: 3px solid; padding-inline: 0.75rem; }
-.jdr-ninja-overlay .jdr-ninja__diagnostics > div { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-block: 0.5rem; }
-.jdr-ninja-overlay dt { font-weight: bold; flex: 1 1 8rem; }
-.jdr-ninja-overlay dd { margin: 0; flex: 3 1 14rem; overflow-wrap: anywhere; }
-/* Independent of DSN's hide class: reveal at the later deadline, without adding the delays. */
-.jdr-ninja-overlay-hold { display: none !important; }
+/* Status pills: tinted, rounded and borderless, so they never read as buttons. An icon or text always carries the state too. */
+.jdr-ninja .jn-pill { --jn-level: var(--color-text-secondary);
+  display: inline-flex; align-items: center; gap: 0.35rem; flex: none; width: max-content; max-width: 100%;
+  padding: 0.15rem 0.6rem; border-radius: 999px; font-size: var(--font-size-12, 0.8rem); font-weight: 600; line-height: 1.4;
+  color: var(--color-text-primary); background: color-mix(in srgb, var(--jn-level) 20%, transparent); }
+.jdr-ninja .jn-pill > i { color: var(--jn-level); }
+.jdr-ninja .jn-pill--success { --jn-level: var(--color-level-success); }
+.jdr-ninja .jn-pill--warning { --jn-level: var(--color-level-warning); }
+.jdr-ninja .jn-pill--error { --jn-level: var(--color-level-error); }
+.jdr-ninja .jn-pill--info { --jn-level: var(--color-level-info); }
+.jdr-ninja .jn-pill--neutral { --jn-level: var(--color-text-secondary); }
+
+/* Buttons: `button.bright` (Foundry) is the one primary action; destructive actions use the error colour. */
+/* The error colour is mixed with the text colour, so it stays legible on dark and light backgrounds. */
+.jdr-ninja button.jn-danger { --jn-danger: color-mix(in srgb, var(--color-level-error) 65%, var(--color-text-primary));
+  color: var(--jn-danger); border-color: color-mix(in srgb, var(--jn-danger) 60%, transparent); }
+.jdr-ninja button.jn-danger:is(:hover, :focus-visible):not(:disabled) { background: color-mix(in srgb, var(--color-level-error) 16%, transparent); }
+.jdr-ninja button.jn-danger:disabled { opacity: 0.5; }
+/* Foundry's light theme resets button colours after its `button.bright` rule: keep the primary action's accent there too. */
+:is(.jdr-ninja.theme-light, .theme-light .jdr-ninja) button.bright:not(:disabled) {
+  --button-background-color: var(--color-warm-1); --button-border-color: var(--color-cool-5); --button-text-color: var(--color-cool-5);
+  --button-hover-background-color: color-mix(in srgb, var(--color-warm-1) 85%, var(--color-text-primary));
+  --button-hover-border-color: var(--color-cool-5); --button-hover-text-color: var(--color-cool-5); }
+.jdr-ninja button.jn-icon-button { flex: none; width: var(--input-height, 2rem); min-width: 0; padding: 0; display: inline-grid; place-items: center; }
+.jdr-ninja button.jn-icon-button > i { margin: 0; }
+.jdr-ninja .jn-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.jdr-ninja .jn-toolbar > button:not(.jn-icon-button) { flex: none; width: auto; }
+
+.jdr-ninja .jn-info { flex: none; color: var(--color-text-subtle); cursor: help; margin-inline-start: 0.25rem; }
+.jdr-ninja .jn-info:focus-visible { outline: 2px solid var(--color-level-info); outline-offset: 2px; border-radius: 50%; }
+.jdr-ninja .jn-muted { color: var(--color-text-secondary); }
+
+/* Segmented tabs (role="tablist" / role="tab" with aria-selected). */
+.jdr-ninja .jn-tabs { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.2rem; width: max-content; max-width: 100%;
+  background: var(--jn-surface); border: 1px solid var(--jn-line); border-radius: var(--jn-radius); }
+.jdr-ninja .jn-tabs [role="tab"] { flex: none; width: auto; border: none; background: transparent; padding-inline: 0.75rem; }
+.jdr-ninja .jn-tabs [role="tab"][aria-selected="true"] { background: var(--jn-surface-strong); font-weight: 600; }
+
+.jdr-ninja .jn-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1rem; }
+@container (max-width: 560px) { .jdr-ninja .jn-grid-2 { grid-template-columns: 1fr; } }
+
+/* Notices keep their role; the level colour marks the edge. */
+.jdr-ninja .notice { border-inline-start: 3px solid var(--color-text-secondary); padding: 0.4rem 0.75rem; border-radius: 0 var(--jn-radius) var(--jn-radius) 0; background: var(--jn-surface); }
+.jdr-ninja .notice-info { border-inline-start-color: var(--color-level-info); }
+.jdr-ninja .notice-warning { border-inline-start-color: var(--color-level-warning); }
+.jdr-ninja .notice-error { border-inline-start-color: var(--color-level-error); }
+
+/* Actors directory: the module's shortcuts share one compact row, inside Foundry's header actions. */
+.jn-directory-actions { display: flex; flex-wrap: wrap; gap: 0.25rem; flex: 1 1 100%; min-width: 0; }
+.jn-directory-actions > button.jn-directory-button { flex: 1 1 auto; width: auto; min-width: 0; padding-inline: 0.4rem; font-size: var(--font-size-12, 0.8rem); white-space: nowrap; }
+.jn-directory-actions > button.jn-directory-button > i { margin-inline-end: 0.3rem; }

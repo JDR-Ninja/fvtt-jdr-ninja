@@ -1,0 +1,82 @@
+/* Variables and compatible macros windows. Shared components (layout, sections, cards, pills, tabs, grid) live in module.css. */
+.jdr-ninja .jn-variables { --jn-accent: var(--color-text-accent, var(--color-level-info)); }
+.jdr-ninja .jn-variables [hidden] { display: none !important; }
+.jdr-ninja .jn-variables .jn-sr-only, .jdr-ninja .jn-variables .notice[role="status"]:empty {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Header: scope tabs with the write state, then the controller of the world variables on one compact line. */
+.jdr-ninja .jn-variable-controller > strong { overflow-wrap: anywhere; }
+.jdr-ninja .jn-variable-controller select { flex: 0 1 14rem; width: auto; min-width: 8rem; }
+
+/* Records on the left, editor on the right; one column when the window is narrow. */
+.jdr-ninja .jn-variable-columns { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(18rem, 2fr); gap: 1.25rem; align-items: start; min-height: 0; }
+@container (max-width: 640px) { .jdr-ninja .jn-variable-columns { grid-template-columns: minmax(0, 1fr); } }
+.jdr-ninja .jn-variable-records, .jdr-ninja .jn-variable-editor { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.jdr-ninja .jn-variable-editor { gap: 1rem; }
+.jdr-ninja .jn-variable-search { flex-wrap: nowrap; }
+.jdr-ninja .jn-variable-search > label.search { flex: 1 1 6rem; min-width: 0; }
+.jdr-ninja .jn-variable-list { display: flex; flex-direction: column; gap: 0.4rem; }
+
+/* A record is a card-button: the selected one carries an accent bar on its left edge, a stronger surface and a bold name. */
+.jdr-ninja .jn-variable-row { position: relative; height: auto; min-height: 0; align-items: stretch; justify-content: flex-start; gap: 0.15rem;
+  padding: 0.5rem 0.75rem 0.5rem 1.1rem; text-align: start; white-space: normal; overflow-wrap: anywhere; color: var(--color-text-primary); }
+.jdr-ninja .jn-variable-row::before { content: ""; position: absolute; inset-block: 0.45rem; inset-inline-start: 0.45rem; width: 4px; border-radius: 2px; background: transparent; }
+.jdr-ninja .jn-variable-row:hover { background: var(--jn-surface-strong); color: var(--color-text-primary); }
+.jdr-ninja .jn-variable-row:focus-visible { outline: 2px solid var(--color-level-info); outline-offset: 1px; box-shadow: none; }
+.jdr-ninja .jn-variable-row[aria-pressed="true"] { background: var(--jn-surface-strong); border-color: color-mix(in srgb, var(--jn-accent) 55%, transparent); }
+.jdr-ninja .jn-variable-row[aria-pressed="true"]::before { background: var(--jn-accent); }
+.jdr-ninja .jn-variable-row[aria-pressed="true"] strong { color: var(--color-text-emphatic, var(--color-text-primary)); }
+.jdr-ninja .jn-variable-row__main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.75rem; }
+.jdr-ninja .jn-variable-row__main > strong { min-width: 0; }
+.jdr-ninja .jn-variable-value { margin-inline-start: auto; min-width: 0; text-align: end; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.jdr-ninja .jn-variable-row small { font-size: var(--font-size-12, 0.8rem); }
+@media (forced-colors: active) { .jdr-ninja .jn-variable-row[aria-pressed="true"] { outline: 2px solid Highlight; } }
+
+/* Editor: stacked groups, tight labels, and cards for each value or list entry. */
+.jdr-ninja .jn-variable-editor .jn-grid-2 { row-gap: 0.75rem; }
+.jdr-ninja .jn-variable-editor .form-group.stacked { gap: 0.2rem; }
+.jdr-ninja .jn-variable-editor .form-group.stacked > label { line-height: 1.5; }
+.jdr-ninja .jn-variable-editor .jn-label-row { display: flex; align-items: center; gap: 0.25rem; }
+.jdr-ninja .jn-variable-editor .jn-label-row > label { flex: none; font-weight: bold; line-height: 1.5; color: var(--color-form-label); }
+.jdr-ninja .jn-variable-editor .jn-label-row > .jn-info { margin: 0; }
+.jdr-ninja .jn-variable-editor textarea { width: 100%; }
+.jdr-ninja .jn-variable-editor label.checkbox { flex: none; font-size: var(--font-size-14, 0.9rem); }
+.jdr-ninja .jn-variable-value-card { gap: 0.6rem; }
+.jdr-ninja .jn-variable-value__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.jdr-ninja .jn-variable-value__title { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
+.jdr-ninja .jn-variable-value__title > h4 { margin: 0; padding: 0; border: none; font-family: inherit; font-size: var(--font-size-14, 0.9rem); font-weight: 600; line-height: 1.4;
+  letter-spacing: normal; text-transform: none; font-variant: normal; color: var(--color-text-emphatic, var(--color-text-primary)); }
+.jdr-ninja .jn-variable-value__title > .jn-info { margin: 0; }
+.jdr-ninja .jn-variable-value__actions { gap: 0.25rem; }
+.jdr-ninja .jn-variable-insert > select, .jdr-ninja .jn-variable-apply > select { flex: 1 1 10rem; width: auto; min-width: 0; }
+.jdr-ninja .jn-variable-amount { display: flex; align-items: center; gap: 0.4rem; font-weight: bold; color: var(--color-form-label); }
+.jdr-ninja .jn-variable-amount > input { width: 6rem; }
+.jdr-ninja .jn-variable-deps { display: flex; align-items: baseline; gap: 0.4rem; margin: 0; font-size: var(--font-size-12, 0.8rem); }
+.jdr-ninja .jn-variable-empty { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+
+/* Macro picker, arguments table and code sample. */
+.jdr-ninja .jn-macro-picker > select { flex: 1 1 14rem; width: auto; min-width: 0; }
+.jdr-ninja .jn-arguments { width: 100%; table-layout: fixed; border-collapse: collapse; border: none; }
+.jdr-ninja .jn-arguments th { padding: 0 0.35rem 0.35rem; border: none; border-bottom: 1px solid var(--jn-line); text-align: start; vertical-align: bottom; overflow-wrap: anywhere;
+  font-size: var(--font-size-12, 0.8rem); font-weight: 600; color: var(--color-text-secondary); }
+.jdr-ninja .jn-arguments td { padding: 0.35rem; border: none; vertical-align: middle; }
+.jdr-ninja .jn-arguments tbody tr + tr td { border-block-start: 1px solid var(--jn-line); }
+.jdr-ninja .jn-arguments .jn-arguments__name { width: 28%; }
+.jdr-ninja .jn-arguments .jn-arguments__type { width: 24%; }
+.jdr-ninja .jn-arguments .jn-arguments__required { width: 5.5rem; text-align: center; }
+.jdr-ninja .jn-arguments .jn-arguments__actions { width: 3rem; text-align: end; }
+.jdr-ninja .jn-arguments td input:not([type="checkbox"]), .jdr-ninja .jn-arguments td select { width: 100%; min-width: 0; }
+.jdr-ninja .jn-arguments div.jn-arguments__default { display: flex; align-items: center; gap: 0.4rem; }
+.jdr-ninja .jn-arguments div.jn-arguments__default > input[type="checkbox"] { flex: none; }
+@container (max-width: 560px) {
+  .jdr-ninja .jn-arguments .jn-arguments__name { width: 25%; }
+  .jdr-ninja .jn-arguments .jn-arguments__type { width: 23%; }
+  .jdr-ninja .jn-arguments .jn-arguments__actions { width: 2.75rem; }
+}
+/* No default is declared while the box is unchecked: the field stays editable but reads as unused. */
+.jdr-ninja .jn-arguments tr:has([data-arg-field="hasDefault"]:not(:checked)) [data-arg-field="default"] { opacity: 0.5; }
+.jdr-ninja .jn-variables pre.jn-code { margin: 0; padding: 0.6rem 0.75rem; overflow: auto; white-space: pre-wrap;
+  background: var(--jn-surface); border: 1px solid var(--jn-line); border-radius: var(--jn-radius); }
+/* Core styles inline code as a no-wrap chip: a code sample keeps its lines and wraps inside the window. */
+.jdr-ninja .jn-variables pre.jn-code code { display: block; padding: 0; border: none; background: none; box-shadow: none; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: var(--font-monospace, monospace); font-size: var(--font-size-12, 0.8rem); line-height: 1.5; color: var(--color-text-primary); }

@@ -6,6 +6,34 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const L = key => game.i18n.localize(`${I18N}.overlay.${key}`);
 const Fmt = (key, values) => game.i18n.format(`${I18N}.overlay.${key}`, values);
 
+const PILLS = { ok: { level: "success", icon: "fa-circle-check" }, warning: { level: "warning", icon: "fa-triangle-exclamation" },
+  error: { level: "error", icon: "fa-circle-xmark" } };
+
+/**
+ * The pill of each diagnostics line, from the account's answer alone. `ok` also picks the line's message. A missing
+ * subscription or overlay stops rolls from reaching the stream (`error`); no OBS source or no recent command poll
+ * leaves the rest working (`warning`). The account line is a plain value and gets no pill.
+ */
+export function diagnosticStatus(data) {
+  const line = (ok, failure) => ({ ok, ...(ok ? PILLS.ok : PILLS[failure]) });
+  return {
+    subscription: line(Boolean(data?.entitled), "error"),
+    overlay: line(Boolean(data?.overlay?.exists && data.overlay.enabled), "error"),
+    obs: line(data?.overlay?.connectedClients > 0, "warning"),
+    poll: line(Number.isFinite(data?.tableCommands?.secondsSinceLastPoll), "warning"),
+  };
+}
+
+/** A moment in Foundry's language, short and without seconds. Null for a missing or unreadable one. */
+export function formatMoment(value, locale, { timeZone } = {}) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const options = { dateStyle: "medium", timeStyle: "short", ...(timeZone ? { timeZone } : {}) };
+  try { return new Intl.DateTimeFormat(locale, options).format(date); }
+  catch { return new Intl.DateTimeFormat(undefined, options).format(date); }
+}
+
 export class OverlayPanel extends HandlebarsApplicationMixin(ApplicationV2) {
   static instances = new Set();
   static instance = null;
@@ -53,20 +81,21 @@ export class OverlayPanel extends HandlebarsApplicationMixin(ApplicationV2) {
     const access = relay.access({ requireEnabled: false });
     const data = this._diagnostics;
     const rows = [];
-    const push = (key, message) => rows.push({ label: L(`diag.${key}`), message });
+    const push = (key, message, pill) => rows.push({ label: L(`diag.${key}`), message, level: pill?.level ?? null, icon: pill?.icon ?? null });
     if (data) {
+      const status = diagnosticStatus(data);
       push("account", data.account);
-      push("subscription", L(data.entitled ? "diag.allowed" : "error.notEntitled"));
-      push("overlay", L(data.overlay?.exists && data.overlay.enabled ? "diag.overlayActive" : "error.overlayDisabled"));
-      push("obs", data.overlay?.connectedClients > 0
-        ? Fmt("diag.obsConnected", { count: data.overlay.connectedClients }) : L("diag.obsMissing"));
-      if (game.user?.isGM) push("poll", Number.isFinite(data.tableCommands?.secondsSinceLastPoll)
-        ? Fmt("diag.pollRecent", { seconds: data.tableCommands.secondsSinceLastPoll }) : L("diag.pollMissing"));
+      push("subscription", L(status.subscription.ok ? "diag.allowed" : "error.notEntitled"), status.subscription);
+      push("overlay", L(status.overlay.ok ? "diag.overlayActive" : "error.overlayDisabled"), status.overlay);
+      push("obs", status.obs.ok ? Fmt("diag.obsConnected", { count: data.overlay.connectedClients }) : L("diag.obsMissing"), status.obs);
+      if (game.user?.isGM) push("poll", status.poll.ok
+        ? Fmt("diag.pollRecent", { seconds: data.tableCommands.secondsSinceLastPoll }) : L("diag.pollMissing"), status.poll);
     }
     const choices = (values, current, label) => values.map(value => ({ value,
       label: L(label(value)), selected: value === current }));
     const success = Number(relay.setting("overlayLastSuccessAt")) || 0;
     const failure = Number(relay.setting("overlayLastErrorAt")) || 0;
+    const when = formatMoment(success, game.i18n.lang);
     return { busy: this._controller !== null, enabled: relay.enabled(), isGM: game.user?.isGM === true,
       tableCommands: relay.setting("overlayTableCommandsEnabled") === true,
       canCheck: access.ok, canTest: relay.access().ok && data?.entitled !== false,
@@ -76,7 +105,7 @@ export class OverlayPanel extends HandlebarsApplicationMixin(ApplicationV2) {
       rows, hasDiagnostics: rows.length > 0,
       // Offered only when the account's diagnostics report sending as not included.
       needsSubscription: data?.entitled === false,
-      lastSuccess: success ? Fmt("lastSuccess", { when: new Date(success).toLocaleString() }) : "",
+      lastSuccess: when ? Fmt("lastSuccess", { when }) : "",
       lastError: failure > success ? String(relay.setting("overlayLastError") || "") : "",
     };
   }

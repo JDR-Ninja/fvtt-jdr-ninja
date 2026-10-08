@@ -9,21 +9,54 @@ import { pushActor, createActor, notify } from "./sync.js";
 /** The Actors entry points exist only for a GM who can sync now; Connections explains every other state. */
 function atlasReady() { return atlasAccess().ok && AtlasApi.hasToken(); }
 
+/**
+ * The module's Actors shortcuts share one compact row, `div.jn-directory-actions`. The first integration to render
+ * creates it and the next one reuses it, so this finds the row before making one.
+ */
+function shortcutRow(host) {
+  const existing = host.querySelector(".jn-directory-actions");
+  if (existing) return existing;
+  const row = document.createElement("div");
+  row.className = "jn-directory-actions";
+  return row;
+}
+
+/** The shortcut: an icon and a short label, with the window's full title as its tooltip and accessible name. */
+function atlasButton() {
+  const title = game.i18n.localize("JDRNINJA_ATLAS_SYNC.app.title");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "jdr-ninja-atlas-open jn-directory-button";
+  button.setAttribute("data-tooltip", title);
+  button.setAttribute("aria-label", title);
+  const icon = document.createElement("i");
+  icon.className = "fa-solid fa-globe";
+  icon.setAttribute("aria-hidden", "true");
+  const label = document.createElement("span");
+  label.textContent = game.i18n.localize("JDRNINJA_ATLAS_SYNC.app.openButton");
+  button.append(icon, label);
+  button.addEventListener("click", () => AtlasSyncApp.open());
+  return button;
+}
+
 export function renderAtlasButton(_app, html) {
   const root = html instanceof HTMLElement ? html : html?.[0];
   if (!root) return;
-  root.querySelector(".jdr-ninja-atlas-open")?.remove();
+  const stale = root.querySelector(".jdr-ninja-atlas-open");
+  const staleRow = stale?.parentElement;
+  stale?.remove();
+  // A row this button was alone in would otherwise stay behind as an empty gap.
+  if (staleRow?.classList?.contains("jn-directory-actions") && !staleRow.children.length) staleRow.remove();
   if (!atlasReady()) return;
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "jdr-ninja-atlas-open";
-  button.textContent = game.i18n.localize("JDRNINJA_ATLAS_SYNC.app.title");
-  button.addEventListener("click", () => AtlasSyncApp.open());
   const header = root.querySelector(".header-actions") || root.querySelector(".directory-header");
-  const footer = root.querySelector(".directory-footer");
-  if (header) header.appendChild(button);
-  else if (footer) footer.prepend(button);
-  else root.prepend(button);
+  const host = header || root.querySelector(".directory-footer") || root;
+  const row = shortcutRow(host);
+  // First in the row whichever integration rendered first: Atlas, then the generators.
+  row.prepend(atlasButton());
+  // Foundry's header takes the row after its own buttons; the footer and the bare root keep it first.
+  if (row.parentElement) return;
+  if (header) host.append(row);
+  else host.prepend(row);
 }
 
 function actorFromEntry(li) {

@@ -16,7 +16,7 @@ class App {
 class ForcedDeletion {}
 globalThis.foundry = { applications: { api: { ApplicationV2: App, HandlebarsApplicationMixin: base => base } },
   data: { operators: { ForcedDeletion } } };
-const { AtlasSyncApp } = await import("../scripts/atlas/sync-app.js");
+const { AtlasSyncApp, rowStatus, connectionStatus, formatSyncedAt } = await import("../scripts/atlas/sync-app.js");
 const { refreshAtlasIntegration, atlasContextOptions, renderAtlasButton } = await import("../scripts/atlas/integration.js");
 const originalFetch = globalThis.fetch;
 const copy = JSON.parse(await readFile(new URL("../lang/fr.json", import.meta.url), "utf8"));
@@ -110,25 +110,207 @@ test("disabled integration, player access, unsupported systems, and the old modu
   assert.equal(requests.length, 0);
 });
 
+/** The few DOM members the directory hook touches: classes, children, attributes and class selectors. */
+class FakeNode {
+  constructor(tag = "div", className = "") {
+    Object.assign(this, { tagName: tag, className, children: [], parentElement: null, textContent: "", attributes: new Map(), listeners: new Map() });
+  }
+  get classList() { return { contains: name => this.className.split(/\s+/).includes(name) }; }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  addEventListener(type, listener) { this.listeners.set(type, listener); }
+  append(...nodes) { for (const node of nodes) { node.remove(); node.parentElement = this; this.children.push(node); } }
+  prepend(...nodes) { for (const node of nodes) node.remove(); for (const node of nodes) node.parentElement = this; this.children.unshift(...nodes); }
+  remove() { if (this.parentElement) this.parentElement.children.splice(this.parentElement.children.indexOf(this), 1); this.parentElement = null; }
+  querySelector(selector) {
+    for (const child of this.children) {
+      if (child.classList.contains(selector.slice(1))) return child;
+      const deeper = child.querySelector(selector);
+      if (deeper) return deeper;
+    }
+    return null;
+  }
+}
+
+/** An Actors directory as the render hook receives it: Foundry's header buttons, with or without `.header-actions`. */
+function directory({ headerActions = true } = {}) {
+  const root = new FakeNode("section", "directory");
+  const header = new FakeNode("header", "directory-header");
+  const footer = new FakeNode("footer", "directory-footer");
+  root.append(header, footer);
+  const actions = headerActions ? new FakeNode("div", "header-actions action-buttons flexrow") : null;
+  if (actions) { header.append(actions); actions.append(new FakeNode("button", "create-entry"), new FakeNode("button", "create-folder")); }
+  return { root, header, footer, actions, html: [root] };
+}
+const rowIn = host => host.children.filter(child => child.classList.contains("jn-directory-actions"));
+const labels = node => node.children.map(child => child.className);
+
 test("the Actors directory offers Atlas only to a GM who can sync now, never as a disabled button", () => {
-  globalThis.document = { createElement: () => ({ addEventListener() {} }) };
-  const render = () => {
-    const added = [], header = { appendChild: button => added.push(button) };
-    renderAtlasButton(null, [{ querySelector: selector => selector === ".header-actions" ? header : null }]);
-    return added;
-  };
+  globalThis.document = { createElement: tag => new FakeNode(tag) };
+  const view = directory();
   const pc = actor("directory");
-  const [button] = render();
-  assert.equal(button.className, "jdr-ninja-atlas-open"); assert.notEqual(button.disabled, true);
+  renderAtlasButton(null, view.html);
+  const [row] = rowIn(view.actions);
+  const [button] = row.children;
+  assert.equal(button.className, "jdr-ninja-atlas-open jn-directory-button"); assert.notEqual(button.disabled, true);
   assert.equal(contextEntry().visible(directoryEntry(pc.id)), true);
   for (const mode of ["disabled", "player", "legacy", "system", "token"]) {
     settings.set("atlasEnabled", mode !== "disabled"); settings.set("atlasToken", mode === "token" ? "" : "fixture-atlas-token");
     game.user.isGM = mode !== "player";
     game.modules = new Map(mode === "legacy" ? [["jdr-ninja-atlas-sync", { active: true }]] : []);
     game.system = { id: mode === "system" ? "swade" : "dnd5e", version: "5.3.0" };
-    assert.deepEqual(render(), [], mode);
+    // A re-render over the same markup takes the old button away, and the row it was alone in.
+    renderAtlasButton(null, view.html);
+    assert.deepEqual(labels(view.actions), ["create-entry", "create-folder"], mode);
+    const fresh = directory();
+    renderAtlasButton(null, fresh.html);
+    assert.deepEqual(labels(fresh.actions), ["create-entry", "create-folder"], mode);
     assert.equal(contextEntry().visible(directoryEntry(pc.id)), false, mode);
   }
+});
+
+test("the Atlas shortcut is an icon, a short label and the full title as tooltip, in the shared row of the header", () => {
+  globalThis.document = { createElement: tag => new FakeNode(tag) };
+  const view = directory();
+  renderAtlasButton(null, view.html);
+  // The row follows Foundry's own buttons, inside `.header-actions`.
+  assert.deepEqual(labels(view.actions), ["create-entry", "create-folder", "jn-directory-actions"]);
+  const [button] = view.actions.children[2].children;
+  assert.equal(button.tagName, "button");
+  assert.equal(button.type, "button");
+  assert.equal(button.attributes.get("data-tooltip"), copy["JDRNINJA_ATLAS_SYNC.app.title"]);
+  assert.equal(button.attributes.get("aria-label"), copy["JDRNINJA_ATLAS_SYNC.app.title"]);
+  const [icon, label] = button.children;
+  assert.equal(icon.className, "fa-solid fa-globe");
+  assert.equal(icon.attributes.get("aria-hidden"), "true");
+  assert.equal(label.textContent, copy["JDRNINJA_ATLAS_SYNC.app.openButton"]);
+  assert(label.textContent.length < copy["JDRNINJA_ATLAS_SYNC.app.title"].length, "the visible label is the short one");
+  // Rendering again, as every directory refresh does, never doubles the button or the row.
+  renderAtlasButton(null, view.html); renderAtlasButton(null, view.html);
+  assert.equal(rowIn(view.actions).length, 1);
+  assert.equal(view.actions.children[2].children.length, 1);
+  // The click opens the window.
+  const open = AtlasSyncApp.open;
+  let opened = 0;
+  AtlasSyncApp.open = () => { opened++; };
+  try { button.listeners.get("click")(); } finally { AtlasSyncApp.open = open; }
+  assert.equal(opened, 1);
+});
+
+test("the Atlas shortcut joins a row the creature shortcuts made first, and stays ahead of them", () => {
+  globalThis.document = { createElement: tag => new FakeNode(tag) };
+  const view = directory();
+  const row = new FakeNode("div", "jn-directory-actions");
+  row.append(new FakeNode("button", "jdr-ninja-creature-open jn-directory-button"), new FakeNode("button", "jdr-ninja-creature-open jn-directory-button"));
+  view.actions.append(row);
+  renderAtlasButton(null, view.html);
+  assert.equal(rowIn(view.actions).length, 1);
+  assert.equal(rowIn(view.actions)[0], row);
+  assert.deepEqual(labels(row), ["jdr-ninja-atlas-open jn-directory-button", "jdr-ninja-creature-open jn-directory-button",
+    "jdr-ninja-creature-open jn-directory-button"]);
+  // Taking Atlas away leaves the other integration's buttons in their row.
+  settings.set("atlasEnabled", false);
+  renderAtlasButton(null, view.html);
+  assert.deepEqual(labels(row), ["jdr-ninja-creature-open jn-directory-button", "jdr-ninja-creature-open jn-directory-button"]);
+  assert.equal(rowIn(view.actions).length, 1);
+});
+
+test("without `.header-actions` the shortcut falls back to the directory header, then its footer, then the root", () => {
+  globalThis.document = { createElement: tag => new FakeNode(tag) };
+  const withHeader = directory({ headerActions: false });
+  renderAtlasButton(null, withHeader.html);
+  assert.equal(rowIn(withHeader.header).length, 1);
+  assert.equal(rowIn(withHeader.header)[0].children[0].className, "jdr-ninja-atlas-open jn-directory-button");
+
+  const footerOnly = directory({ headerActions: false });
+  footerOnly.header.remove();
+  renderAtlasButton(null, footerOnly.html);
+  assert.equal(rowIn(footerOnly.footer).length, 1);
+
+  const bare = new FakeNode("section", "directory");
+  renderAtlasButton(null, [bare]);
+  assert.equal(rowIn(bare).length, 1);
+  assert.equal(bare.children[0].children[0].className, "jdr-ninja-atlas-open jn-directory-button");
+});
+
+test("a sync date follows Foundry's language, short and without seconds, and an unreadable one shows nothing", () => {
+  const moment = "2026-10-08T19:30:45.000Z";
+  const plain = text => text.replace(/\s/g, " ");
+  assert.equal(plain(formatSyncedAt(moment, "en", { timeZone: "UTC" })), "Oct 8, 2026, 7:30 PM");
+  const french = formatSyncedAt(moment, "fr", { timeZone: "UTC" });
+  assert.match(french, /19:30/); assert.match(french, /2026/); assert.match(french, /oct/);
+  assert.notEqual(french, formatSyncedAt(moment, "en", { timeZone: "UTC" }));
+  for (const locale of ["en", "fr", "es", "de", "it"]) assert.doesNotMatch(formatSyncedAt(moment, locale, { timeZone: "UTC" }), /:45/, locale);
+  // Same moment, another zone: the formatter shows the viewer's clock, not UTC.
+  assert.notEqual(formatSyncedAt(moment, "en", { timeZone: "Asia/Tokyo" }), formatSyncedAt(moment, "en", { timeZone: "UTC" }));
+  for (const value of [null, undefined, "", "not a date"]) assert.equal(formatSyncedAt(value, "en"), null, String(value));
+  // A language tag the browser does not know falls back to its own, instead of breaking the window.
+  assert.match(formatSyncedAt(moment, "not_a_locale", { timeZone: "UTC" }), /2026/);
+});
+
+test("pill levels: a row follows its link, the header follows the connection", () => {
+  assert.deepEqual(rowStatus({ linked: false, synced: false }), { state: "unlinked", level: "neutral", icon: "fa-link-slash" });
+  assert.deepEqual(rowStatus({ linked: false, synced: true }), { state: "unlinked", level: "neutral", icon: "fa-link-slash" });
+  assert.deepEqual(rowStatus({ linked: true, synced: false }), { state: "linked", level: "info", icon: "fa-link" });
+  assert.deepEqual(rowStatus({ linked: true, synced: true }), { state: "synced", level: "success", icon: "fa-circle-check" });
+  assert.deepEqual(connectionStatus({ connected: true, loading: false, failed: false }), { state: "connected", level: "success", icon: "fa-circle-check" });
+  assert.equal(connectionStatus({ connected: true, loading: true, failed: true }).state, "connected");
+  assert.deepEqual(connectionStatus({ connected: false, loading: true, failed: false }), { state: "loading", level: "info", icon: "fa-spinner fa-spin" });
+  assert.deepEqual(connectionStatus({ connected: false, loading: false, failed: true }), { state: "disconnected", level: "error", icon: "fa-circle-xmark" });
+  assert.equal(connectionStatus({ connected: false, loading: false, failed: false }).level, "neutral");
+});
+
+/** The window's context for a world with one synced, one linked-but-never-synced and one unlinked character. */
+async function windowContext({ data, messages = () => {} } = {}) {
+  const synced = actor("synced");
+  synced.flags["jdr-ninja"].atlasLink.syncedAtUtc = "2026-10-08T19:30:00Z";
+  const waiting = actor("waiting");
+  const free = actor("free");
+  delete free.flags["jdr-ninja"].atlasLink;
+  const app = new AtlasSyncApp();
+  app._data = data ?? { loading: false, error: null, campaigns: [{ id: "campaign", name: "Campaign", characterCount: 3 }],
+    whoami: { world: { name: "The Sunken Crown" }, tier: { allowed: true } } };
+  messages(app, { synced, waiting, free });
+  return { app, context: await app._prepareContext(), synced, waiting, free };
+}
+
+test("each row's pill, date and message come from its link and its last sync result", async () => {
+  const { app, context, synced, waiting, free } = await windowContext({ messages: (app, { synced, waiting }) => {
+    app._recordRowResult(waiting, { ok: false, status: "NETWORK_ERROR", body: {} });
+    app._recordRowResult(synced, { ok: true, portraitNotice: "TOO_LARGE" });
+  } });
+  const row = actor => context.rows.find(candidate => candidate.actorId === actor.id);
+  assert.deepEqual([row(synced).status.state, row(synced).status.level], ["synced", "success"]);
+  assert.equal(row(synced).status.label, copy["JDRNINJA_ATLAS_SYNC.row.synced"]);
+  assert.equal(row(synced).syncedLabel, formatSyncedAt("2026-10-08T19:30:00Z", undefined));
+  assert.equal(row(synced).error, portraitTooLarge);
+  assert.equal(row(synced).errorLevel, "warning");
+  assert.deepEqual([row(waiting).status.state, row(waiting).status.level], ["linked", "info"]);
+  assert.equal(row(waiting).status.label, copy["JDRNINJA_ATLAS_SYNC.row.linked"]);
+  assert.equal(row(waiting).syncedLabel, null);
+  assert.equal(row(waiting).error, copy["JDRNINJA_ATLAS_SYNC.status.NETWORK_ERROR"]);
+  assert.equal(row(waiting).errorLevel, "error");
+  assert.deepEqual([row(free).status.state, row(free).status.level], ["unlinked", "neutral"]);
+  assert.equal(row(free).status.label, copy["JDRNINJA_ATLAS_SYNC.row.unlinked"]);
+  assert.equal(row(free).error, null);
+  // A clean result, a successful unlink or a reload drops the message and its level together.
+  app._recordRowResult(waiting, { ok: true });
+  app._forgetRowMessages(synced.id);
+  assert.equal(app._syncErrors.size, 0); assert.equal(app._syncLevels.size, 0);
+  app._recordRowResult(free, { ok: false, status: "NETWORK_ERROR", body: {} });
+  app._forgetRowMessages();
+  assert.equal(app._syncErrors.size, 0); assert.equal(app._syncLevels.size, 0);
+});
+
+test("the header pill reads connected, loading or not connected, with the world only once connected", async () => {
+  const label = key => copy[key];
+  const connected = (await windowContext()).context;
+  assert.deepEqual([connected.connection.level, connected.connection.label, connected.worldName],
+    ["success", label("JDRNINJA.status.connected"), "The Sunken Crown"]);
+  const loading = (await windowContext({ data: { loading: true, whoami: null, campaigns: [], error: null } })).context;
+  assert.deepEqual([loading.connection.level, loading.connection.label], ["info", label("JDRNINJA_ATLAS_SYNC.app.loading")]);
+  const failed = (await windowContext({ data: { loading: false, whoami: null, campaigns: [], error: "INVALID_TOKEN" } })).context;
+  assert.deepEqual([failed.connection.level, failed.connection.label], ["error", label("JDRNINJA_ATLAS_SYNC.app.disconnected")]);
+  assert.equal(failed.worldName, "");
 });
 
 test("the context-menu entry exists from the first render and follows the switch, the GM role and the actor type", async () => {
@@ -474,4 +656,86 @@ test("the Atlas template renders its actions and escapes actor data in all five 
     assert(html.includes("&lt;img"));
     for (const action of html.matchAll(/data-action="(\w+)"/g)) assert.equal(typeof AtlasSyncApp.DEFAULT_OPTIONS.actions[action[1]], "function");
   }
+});
+
+/** The tags of one kind that carry a class, e.g. `button` with `bright`. */
+const tagsWithClass = (html, tag, name) => [...html.matchAll(new RegExp(`<${tag}\\b[^>]*>`, "g"))]
+  .map(match => match[0]).filter(opening => new RegExp(`class="[^"]*\\b${name}\\b`).test(opening));
+
+test("the Atlas window is a layout of header, controls, a card per character and one primary action in the footer", async () => {
+  const source = await readFile(new URL("../templates/atlas-sync.hbs", import.meta.url), "utf8");
+  for (const locale of ["fr", "en", "es", "de", "it"]) {
+    const strings = JSON.parse(await readFile(new URL(`../lang/${locale}.json`, import.meta.url), "utf8"));
+    game.i18n.localize = key => strings[key] ?? key; game.i18n.lang = locale;
+    const handlebars = Handlebars.create();
+    handlebars.registerHelper("localize", key => strings[key] ?? key);
+    const { context, synced, waiting, free } = await windowContext({ messages: (app, { waiting }) => {
+      app._recordRowResult(waiting, { ok: false, status: "NETWORK_ERROR", body: {} });
+    } });
+    const html = handlebars.compile(source)(context);
+    assert(!html.includes("JDRNINJA"), locale);
+    // Structure: one root layout, a scrolling list, a footer; no fieldset and no loose button bars.
+    assert.match(html, /^<div class="standard-form jn-layout atlas-sync">/);
+    assert.equal(tagsWithClass(html, "div", "jn-scroll").length, 1, locale);
+    assert.equal(tagsWithClass(html, "footer", "jn-footer").length, 1, locale);
+    assert(!html.includes("<fieldset"), locale);
+    assert(html.indexOf('class="atlas-sync__header"') < html.indexOf('data-control="campaign"'));
+    // Header: the connection pill, then the world and the system as plain text.
+    assert.match(html, /<header class="atlas-sync__header">\s*<span class="jn-pill jn-pill--success">/);
+    assert(html.includes('<span class="atlas-sync__world">The Sunken Crown</span>'));
+    assert(html.includes('<span class="jn-muted atlas-sync__system">'));
+    assert(!/class="badge/.test(html), locale);
+    // The single primary action is "Sync all", in the footer.
+    const bright = tagsWithClass(html, "button", "bright");
+    assert.equal(bright.length, 1, locale);
+    assert(bright[0].includes('data-action="syncAll"'));
+    assert(html.indexOf('data-action="syncAll"') > html.indexOf("<footer"), "Sync all is in the footer");
+    // Every other hook the code and the screenshot tool rely on is still there, with labels.
+    for (const hook of ['data-control="campaign"', 'data-control="claimable"', 'data-action="refresh"', 'data-action="sync"',
+      'data-action="unlink"', 'data-action="create"', 'data-action="link"']) assert(html.includes(hook), `${locale}: ${hook}`);
+    assert(html.includes('<label for="jdr-ninja-atlas-campaign">') && html.includes('id="jdr-ninja-atlas-campaign"'));
+    assert(html.includes('<label for="jdr-ninja-atlas-claimable">') && html.includes('id="jdr-ninja-atlas-claimable"'));
+    // One card per character; its pill matches its state; the date reads after "Synced".
+    const cards = tagsWithClass(html, "li", "jn-card");
+    assert.deepEqual(cards.map(card => card.match(/data-actor-id="([\w-]+)"/)[1]).sort(), [free.id, synced.id, waiting.id].sort());
+    const flat = html.replace(/\s+/g, " ");
+    assert(flat.includes(`jn-pill--success"> <i class="fa-solid fa-circle-check" aria-hidden="true"></i> ${strings["JDRNINJA_ATLAS_SYNC.row.synced"]} </span>`));
+    assert(flat.includes(`jn-pill--info"> <i class="fa-solid fa-link" aria-hidden="true"></i> ${strings["JDRNINJA_ATLAS_SYNC.row.linked"]} </span>`));
+    assert(flat.includes(`jn-pill--neutral"> <i class="fa-solid fa-link-slash" aria-hidden="true"></i> ${strings["JDRNINJA_ATLAS_SYNC.row.unlinked"]} </span>`));
+    assert(html.includes(`<span class="jn-muted">${formatSyncedAt("2026-10-08T19:30:00Z", locale)}</span>`), locale);
+    assert(html.includes('class="notice notice-error"'), "a failed sync shows its message at error level");
+    // "Sync" is an icon button with its name and tooltip; "Unlink" is the destructive style; the rest stay plain.
+    const sync = tagsWithClass(html, "button", "jn-icon-button").filter(button => button.includes('data-action="sync"'));
+    assert.equal(sync.length, 2, "a linked character has it, whether synced or not");
+    for (const button of sync) {
+      assert(button.includes(`aria-label="${strings["JDRNINJA_ATLAS_SYNC.row.sync"]}"`), locale);
+      assert(button.includes(`data-tooltip="${strings["JDRNINJA_ATLAS_SYNC.row.sync"]}"`), locale);
+    }
+    const unlink = tagsWithClass(html, "button", "jn-danger");
+    assert.equal(unlink.length, 2); assert(unlink.every(button => button.includes('data-action="unlink"')));
+    const refresh = tagsWithClass(html, "button", "jn-icon-button").find(button => button.includes('data-action="refresh"'));
+    assert(refresh.includes("aria-label=") && refresh.includes("data-tooltip="));
+    for (const action of ["create", "link"]) {
+      const [button] = [...html.matchAll(new RegExp(`<button[^>]*data-action="${action}"[^>]*>`, "g"))].map(match => match[0]);
+      assert(!/class=/.test(button), `${action} stays a secondary button`);
+    }
+  }
+});
+
+test("while connecting the window shows the loading pill and no character, and without access only its warning", async () => {
+  const source = await readFile(new URL("../templates/atlas-sync.hbs", import.meta.url), "utf8");
+  const handlebars = Handlebars.create();
+  handlebars.registerHelper("localize", key => copy[key] ?? key);
+  const { context } = await windowContext({ data: { loading: true, whoami: null, campaigns: [], error: null } });
+  const loading = handlebars.compile(source)(context);
+  assert(loading.includes("jn-pill--info"));
+  assert(loading.includes(copy["JDRNINJA_ATLAS_SYNC.app.loading"]));
+  assert(!loading.includes("atlas-sync__rows"));
+  assert(loading.includes('aria-busy="true"'));
+  assert(!loading.includes('class="atlas-sync__world"'), "no world before the connection");
+  settings.set("atlasEnabled", false);
+  const blocked = handlebars.compile(source)(await new AtlasSyncApp()._prepareContext());
+  assert(blocked.includes("notice-warning"));
+  assert(!blocked.includes("data-action="), "nothing to click without access");
+  assert(!blocked.includes("<footer"));
 });
