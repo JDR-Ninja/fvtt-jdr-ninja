@@ -75,11 +75,9 @@
           {{/if}}
           {{#if computed}}
           <div class="form-group stacked">
-            <div class="jn-label-row">
-              <label for="jn-variable-expression">{{localize "JDRNINJA.variables.expression"}}</label>
-              <i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img" aria-label="{{localize 'JDRNINJA.variables.expressionHint'}}" data-tooltip="{{localize 'JDRNINJA.variables.expressionHint'}}"></i>
-            </div>
-            <div class="form-fields"><textarea id="jn-variable-expression" rows="4" data-field="expression" {{#if readOnly}}disabled{{/if}}>{{expressionText}}</textarea></div>
+            <label for="jn-variable-expression">{{localize "JDRNINJA.variables.expression"}}</label>
+            <div class="form-fields"><textarea id="jn-variable-expression" rows="4" data-field="expression" aria-describedby="jn-variable-expression-hint" {{#if readOnly}}disabled{{/if}}>{{expressionText}}</textarea></div>
+            <p class="hint" id="jn-variable-expression-hint">{{localize "JDRNINJA.variables.expressionHint"}}</p>
           </div>
           <div class="jn-toolbar jn-variable-insert"><select name="reference" aria-label="{{localize 'JDRNINJA.variables.insert'}}" {{#if readOnly}}disabled{{/if}}>{{#each referenceGroups}}<optgroup label="{{label}}">{{#each options}}<option value="{{value}}">{{label}}</option>{{/each}}</optgroup>{{/each}}</select><button type="button" data-action="insert" {{#if readOnly}}disabled{{/if}}><i class="fa-solid fa-at" aria-hidden="true"></i> {{localize "JDRNINJA.variables.insert"}}</button></div>
           {{/if}}

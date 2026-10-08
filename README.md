@@ -73,6 +73,11 @@ commands, define computed variables, and pass typed arguments to compatible macr
 
 The variable and macro editors also work locally without a Stream Deck connection.
 
+Computed variables read document data with the same paths as Active Effects, such as
+`@{Spotlight hero}.system.attributes.inspiration`. To find the path of a value, the
+[Document Data Explorer](https://foundryvtt.com/packages/document-data-explorer) module
+shows the data structure of any document from its sheet.
+
 ![Variables window with world variables and a computed value that reads the spotlight hero's inspiration](docs/images/variables.png)
 
 ![Compatible macros window declaring typed arguments for a damage macro](docs/images/macro-arguments.png)

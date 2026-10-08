@@ -239,6 +239,9 @@ test("the variables template renders the grouped insert list and the path hint i
       assert(html.indexOf("<optgroup") < html.indexOf("data-action=\"insert\"") && html.includes("@{Level} * 2"), lang);
       const hint = locale["JDRNINJA.variables.expressionHint"];
       assert(html.includes(escaped("JDRNINJA.variables.expressionHint")), lang); assert(hint.includes("@{") && hint.includes(".system.attributes.inspiration"), lang);
+      // The syntax help stays visible under the field, not hidden in a tooltip.
+      assert(html.includes(`<p class="hint" id="jn-variable-expression-hint">${escaped("JDRNINJA.variables.expressionHint")}</p>`), lang);
+      assert(html.includes('aria-describedby="jn-variable-expression-hint"'), lang);
       assert(!/documentName|documentUuid/.test(hint), lang);
       for (const name of ["min", "max", "clamp", "round", "floor", "ceil", "abs", "if", "concat", "true", "false"]) assert(hint.includes(name), `${lang} ${name}`);
       const duplicate = locale["JDRNINJA.variables.error.duplicateName"];
