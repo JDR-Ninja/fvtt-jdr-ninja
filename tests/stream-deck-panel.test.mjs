@@ -196,3 +196,50 @@ test("the new key shows only once generated, read-only and with its own label, a
   assert(!/data-action="save"[^>]*disabled/.test(off.html));
   assert(!/name="streamDeckEnabled" type="checkbox" checked/.test(off.html));
 });
+
+test("the Variables and macros shortcuts sit between the local connection and the note, in every locale, and stay usable while busy", async () => {
+  for (const locale of ["en", "fr", "es", "de", "it"]) {
+    for (const busy of [false, true]) {
+      const { html, copy } = await renderTemplate(locale, { busy });
+      const sections = [...html.matchAll(/<section class="jn-section">[\s\S]*?<\/section>/g)].map(match => match[0]);
+      assert.equal(sections.length, 2, locale);
+      const [connection, shortcuts] = sections;
+      assert(connection.includes('name="streamDeckUrl"') && !connection.includes("openVariables"), locale);
+      // Same title markup as the local connection, with its own icon and a title of its own.
+      const title = copy["JDRNINJA.streamDeck.variables"];
+      assert(title && title !== copy["JDRNINJA.streamDeck.connection"], locale);
+      assert(shortcuts.includes(`<h3 class="jn-section__title"><i class="fa-solid fa-code" aria-hidden="true"></i>${escaped(title)}</h3>`), locale);
+      assert(shortcuts.includes(`<p class="hint">${escaped(copy["JDRNINJA.variables.menu.hint"])}</p>`), locale);
+      // Two secondary buttons in a toolbar: no class, never disabled (they open other windows, they do not touch the connection).
+      const toolbar = /<div class="jn-toolbar">([\s\S]*?)<\/div>/.exec(shortcuts)?.[1] ?? "";
+      const buttons = [...toolbar.matchAll(/<button[^>]*>[\s\S]*?<\/button>/g)].map(match => match[0]);
+      assert.deepEqual(buttons, [
+        `<button type="button" data-action="openVariables"><i class="fa-solid fa-code" aria-hidden="true"></i> ${escaped(copy["JDRNINJA.variables.menu.variables"])}</button>`,
+        `<button type="button" data-action="openMacroArguments"><i class="fa-solid fa-terminal" aria-hidden="true"></i> ${escaped(copy["JDRNINJA.variables.menu.macroArguments"])}</button>`,
+      ], `${locale} busy=${busy}`);
+      assert(html.indexOf(connection) < html.indexOf(shortcuts) && html.indexOf(shortcuts) < html.indexOf('class="hint jdr-ninja__note"'), locale);
+      assert(html.indexOf(shortcuts) < html.indexOf('<footer class="form-footer jn-footer">'), locale);
+      assert.equal((html.match(/class="bright"/g) ?? []).length, 1, locale);
+    }
+  }
+});
+
+test("the Variables and macros actions open the variables window and the macro arguments window", async () => {
+  const { VariablePanel } = await import("../scripts/variables/panel.js");
+  const { MacroArgumentsPanel } = await import("../scripts/variables/macro-panel.js");
+  const { actions } = StreamDeckPanel.DEFAULT_OPTIONS;
+  const original = [VariablePanel.open, MacroArgumentsPanel.open];
+  const opened = [];
+  try {
+    VariablePanel.open = () => { opened.push("variables"); return "variables window"; };
+    MacroArgumentsPanel.open = () => { opened.push("macroArguments"); return "macro arguments window"; };
+    const f = fixture();
+    // The application calls an action with the panel as `this`; neither action touches the connection or its settings.
+    assert.equal(actions.openVariables.call(f.panel), "variables window");
+    assert.deepEqual(opened, ["variables"]);
+    assert.equal(actions.openMacroArguments.call(f.panel), "macro arguments window");
+    assert.deepEqual(opened, ["variables", "macroArguments"]);
+    assert.equal(f.writes.length, 0);
+    assert.equal(f.panel._busy, false);
+  } finally { [VariablePanel.open, MacroArgumentsPanel.open] = original; }
+});

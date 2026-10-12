@@ -28,23 +28,47 @@
 .jdr-ninja .jdr-ninja__note { display: flex; gap: 0.5rem; align-items: baseline; margin-block-start: auto; }
 .jdr-ninja .jdr-ninja__note > i { flex: none; color: var(--color-text-secondary); }
 
-/* Connections: one card per service, two columns in a wide window and one in a narrow one. */
-.jdr-ninja .jdr-ninja__services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
-@container (max-width: 520px) { .jdr-ninja .jdr-ninja__services { grid-template-columns: minmax(0, 1fr); } }
-.jdr-ninja .jdr-ninja__service { gap: 0.5rem; }
-.jdr-ninja .jdr-ninja__service > .jn-toolbar:last-child { margin-block-start: auto; }
-.jdr-ninja .jdr-ninja__service-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.25rem 0.5rem; }
-.jdr-ninja .jdr-ninja__service-icon { flex: none; width: 1.5rem; text-align: center; font-size: 1.15rem; line-height: 1.5rem; color: var(--color-text-secondary); }
-.jdr-ninja .jdr-ninja__service-title { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
-.jdr-ninja .jdr-ninja__service-title h3 { margin: 0; padding: 0; border: none; font-size: var(--font-size-16, 1rem); font-weight: 600; line-height: 1.5rem;
-  color: var(--color-text-emphatic, var(--color-text-primary)); overflow-wrap: anywhere; }
-.jdr-ninja .jdr-ninja__service-title .jdr-ninja__status { font-size: var(--font-size-12, 0.8rem); color: var(--color-text-secondary); overflow-wrap: anywhere; }
-.jdr-ninja .jdr-ninja__service-title .jdr-ninja__status strong { color: var(--color-text-primary); }
-.jdr-ninja .jdr-ninja__service-head > .jn-pill { margin-block-start: 0.1rem; }
-.jdr-ninja .jdr-ninja__detail { display: flex; gap: 0.35rem; align-items: baseline; font-size: var(--font-size-12, 0.8rem); }
-.jdr-ninja .jdr-ninja__detail > i:first-child { flex: none; }
-.jdr-ninja .jdr-ninja__service > p.jn-muted { font-size: var(--font-size-12, 0.8rem); }
-.jdr-ninja .jdr-ninja__service p.notice { font-size: var(--font-size-12, 0.8rem); }
+/* Connections: the account banner first, then one row per feature, separated by a rule. */
+.jdr-ninja .jdr-ninja__banner { gap: 0.6rem; }
+.jdr-ninja .jdr-ninja__head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.25rem 0.75rem; }
+.jdr-ninja .jdr-ninja__head > .jn-pill { margin-block-start: 0.15rem; }
+.jdr-ninja .jdr-ninja__icon { flex: none; width: 1.5rem; text-align: center; font-size: 1.15rem; line-height: 1.5rem; color: var(--color-text-secondary); }
+.jdr-ninja .jdr-ninja__name { display: flex; flex-direction: column; flex: 1 1 10rem; min-width: 0; }
+/* A feature's name is an h4 under the « Features » title; it keeps the look of the window's other headings. */
+.jdr-ninja .jdr-ninja__name :is(h3, h4) { margin: 0; padding: 0; border: none; font-family: var(--font-h3, inherit); font-size: var(--font-size-16, 1rem);
+  font-weight: 600; line-height: 1.5rem; color: var(--color-text-emphatic, var(--color-text-primary)); overflow-wrap: anywhere; }
+.jdr-ninja .jdr-ninja__name > p, .jdr-ninja .jdr-ninja__banner > p.jn-muted { font-size: var(--font-size-12, 0.8rem); line-height: 1.35; overflow-wrap: anywhere; }
+
+/* One grid for every row, so the pills, switches and buttons line up from row to row. The step runs under the name. */
+.jdr-ninja .jdr-ninja__features { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto auto var(--input-height, 2rem); column-gap: 0.75rem; }
+.jdr-ninja .jdr-ninja__feature { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; row-gap: 0.4rem; padding-block: 0.6rem; }
+.jdr-ninja .jdr-ninja__feature:first-child { padding-block-start: 0; }
+.jdr-ninja .jdr-ninja__feature + .jdr-ninja__feature { border-block-start: 1px solid var(--jn-line); }
+.jdr-ninja .jdr-ninja__feature > .jdr-ninja__icon { grid-column: 1; align-self: start; }
+.jdr-ninja .jdr-ninja__feature > .jdr-ninja__name { grid-column: 2; }
+.jdr-ninja .jdr-ninja__feature > .jn-pill { grid-column: 3; justify-self: end; }
+.jdr-ninja .jdr-ninja__feature > .jdr-ninja__switch { grid-column: 4; }
+.jdr-ninja .jdr-ninja__feature > .jdr-ninja__open { grid-column: 5; }
+.jdr-ninja .jdr-ninja__feature > .jdr-ninja__step { grid-column: 2 / -1; }
+/* A narrow window moves the pill under the name; the switch and the button stay on the right. */
+@container (max-width: 520px) {
+  .jdr-ninja .jdr-ninja__features { grid-template-columns: 1.5rem minmax(0, 1fr) auto var(--input-height, 2rem); }
+  .jdr-ninja .jdr-ninja__feature > .jn-pill { grid-column: 2; grid-row: 2; justify-self: start; }
+  .jdr-ninja .jdr-ninja__feature > .jdr-ninja__switch { grid-column: 3; grid-row: 1; }
+  .jdr-ninja .jdr-ninja__feature > .jdr-ninja__open { grid-column: 4; grid-row: 1; }
+  .jdr-ninja .jdr-ninja__feature > .jdr-ninja__step { grid-column: 2 / -1; grid-row: 3; }
+}
+.jdr-ninja .jdr-ninja__switch { display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; }
+.jdr-ninja .jdr-ninja__switch > input[type="checkbox"] { flex: none; margin: 0; }
+.jdr-ninja .jdr-ninja__switch > label { font-weight: 600; line-height: 1.3; }
+.jdr-ninja .jdr-ninja__switch > .jn-info { margin-inline-start: 0; }
+/* A missing step: one sentence and at most one control, with the notice's level edge from module.css. */
+.jdr-ninja .jdr-ninja__step { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; font-size: var(--font-size-13, 0.85rem); }
+.jdr-ninja .jdr-ninja__step > p { flex: 1 1 14rem; }
+.jdr-ninja .jdr-ninja__step > p:is(:has(+ p), p + p) { flex-basis: 100%; }
+.jdr-ninja .jdr-ninja__step > .form-group { flex: 1 1 100%; margin: 0; }
+.jdr-ninja .jdr-ninja__step > button { flex: none; width: auto; }
+.jdr-ninja .jdr-ninja__pairing { display: flex; flex-direction: column; gap: 0.35rem; }
 
 /* Advanced options: a quiet disclosure, closed by default; its blocks are separated by the shared section rule. */
 .jdr-ninja .jdr-ninja__advanced { flex: none; padding-block-start: 0.75rem; border-block-start: 1px solid var(--jn-line); }

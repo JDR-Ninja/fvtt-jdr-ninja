@@ -62,8 +62,12 @@ async function api(route) {
   if (!["www.jdr.ninja", "jdr.ninja"].includes(url.hostname) || !path.startsWith("/api/foundry/v1/")) {
     unexpected.push(request.url()); return route.abort();
   }
-  if (path === "/api/foundry/v1/device/authorize") return send({ deviceCode: "showcase-device", userCode: "NJA-7Q4K",
-    verificationUriComplete: "https://www.jdr.ninja/vtt-overlay/lier?code=NJA-7Q4K", expiresInSeconds: 600, intervalSeconds: 1 });
+  if (path === "/api/foundry/v1/device/authorize") {
+    // Creatures are switched on before the pairing: the one approval must ask for their permission.
+    if (!body?.requestedCapabilities?.includes("dnd-creatures")) unexpected.push("device/authorize without the creature permission");
+    return send({ deviceCode: "showcase-device", userCode: "NJA-7Q4K",
+      verificationUriComplete: "https://www.jdr.ninja/vtt-overlay/lier?code=NJA-7Q4K", expiresInSeconds: 600, intervalSeconds: 1 });
+  }
   if (path === "/api/foundry/v1/device/token") return send({ status: "approved", token: TOKENS.account,
     grantedCapabilities: body?.deviceCode === "showcase-device" ? ["dnd-creatures"] : [] });
   const headers = request.headers();
@@ -213,25 +217,29 @@ try {
     await game.settings.set("core", "uiConfig", { ...ui, colorScheme: { ...ui.colorScheme, applications: theme, interface: theme } });
   }, args.theme);
 
-  // Connections: pair the account with the creature permission, then enable each integration through its own control.
+  // Connections: enable each integration through its own switch, pair the account (a GM with creatures on also asks for
+  // their permission), then give the Atlas row its token. The window checks the three connections by itself once they exist.
   await page.evaluate(() => game.modules.get("jdr-ninja").api.openConnections());
   const connections = "jdr-ninja-connections";
-  await click(connections, '[data-action="pairCreatures"]');
-  await page.waitForFunction(token => game.settings.get("jdr-ninja", "accountToken") === token, TOKENS.account);
-  await app(connections).locator('[data-action="pairCreatures"]:not([disabled])').waitFor();
   for (const name of ["creaturesEnabled", "overlayEnabled", "atlasEnabled"]) {
     await app(connections).locator(`[name="${name}"]`).check();
     await app(connections).locator(`[name="${name}"]:not([disabled])`).waitFor();
   }
+  await click(connections, '[data-action="pair"]');
+  await page.waitForFunction(token => game.settings.get("jdr-ninja", "accountToken") === token, TOKENS.account);
+  await app(connections).locator('section.jdr-ninja__banner[data-state="verified"]').waitFor();
   await app(connections).locator('[name="atlasToken"]').fill(TOKENS.atlas);
   await click(connections, '[data-action="saveAtlas"]');
-  await app(connections).locator(".jdr-ninja__status strong", { hasText: ATLAS_WORLD }).waitFor();
-  await click(connections, '[data-action="checkCreatures"]');
+  await app(connections).locator('[data-feature="atlas"][data-state="connected"]', { hasText: ATLAS_WORLD }).waitFor();
+  // Done when no operation or automatic check is left: every row then shows its final state.
   await page.waitForFunction(() => {
     const panel = foundry.applications.instances.get("jdr-ninja-connections");
-    return panel._operation === null && panel._results.creatures?.ok === true;
+    return panel._operation === null && Object.values(panel._checks).every(check => check === null) && !panel.element.querySelector('[data-state="checking"]');
   });
-  await app(connections).locator(".jdr-ninja__status strong", { hasText: ACCOUNT_NAME }).waitFor();
+  await app(connections).locator("#jdr-ninja-account-name", { hasText: ACCOUNT_NAME }).waitFor();
+  for (const [feature, state] of [["overlay", "active"], ["creatures", "available"]]) {
+    await app(connections).locator(`[data-feature="${feature}"][data-state="${state}"]`).waitFor();
+  }
 
   // Stream Deck: generate and save a pairing key, then enable the bridge; the fake companion answers the handshake.
   await page.evaluate(() => game.modules.get("jdr-ninja").api.openStreamDeck());
@@ -242,8 +250,11 @@ try {
   companion.key = await page.evaluate(() => game.settings.get("jdr-ninja", "streamDeckKey"));
   await app(streamDeck).locator('[name="streamDeckEnabled"]:not([disabled])').check();
   await page.waitForFunction(() => game.modules.get("jdr-ninja").api.streamDeck.status().state === "ready");
+  // The row of a feature only changes state on a render; its pill repaints by itself.
   await page.evaluate(() => foundry.applications.instances.get("jdr-ninja-connections").render());
-  // The account, creature and Atlas sections; the window keeps the rest scrollable.
+  await app(connections).locator('[data-feature="stream-deck"][data-state="ready"]').waitFor();
+  // The account banner and the four feature rows, with the advanced options closed.
+  assert.equal(await app(connections).locator('details[data-sync="advanced"]').evaluate(details => details.open), false);
   await capture(connections, "connections", { height: "auto" });
   await page.evaluate(() => game.modules.get("jdr-ninja").api.openStreamDeck());
   await capture(streamDeck, "stream-deck");

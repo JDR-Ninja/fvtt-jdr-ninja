@@ -96,7 +96,7 @@ shows the data structure of any document from its sheet.
 3. Open **Configure Settings → JDR Ninja → Configure connections** and enable
    the features you want. Each integration starts disabled.
 
-![JDR Ninja connections window with Stream Deck, account and overlay settings](docs/images/connections.png)
+![JDR Ninja connections window with the account banner and one row per feature](docs/images/connections.png)
 
 **Languages:** English, French, Spanish, German, and Italian.
 

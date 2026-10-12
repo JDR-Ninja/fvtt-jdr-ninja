@@ -1,6 +1,8 @@
 import { MODULE_ID, I18N, SETTINGS } from "../constants.js";
 import { streamDeckBridge } from "./bridge.js";
 import { normalizeBridgeUrl, normalizeBridgeKey, randomNonce } from "./protocol.js";
+import { VariablePanel } from "../variables/panel.js";
+import { MacroArgumentsPanel } from "../variables/macro-panel.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const translate = key => game.i18n.localize(`${I18N}.streamDeck.${key}`);
@@ -47,7 +49,8 @@ export class StreamDeckPanel extends HandlebarsApplicationMixin(ApplicationV2) {
     window: { title: `${I18N}.streamDeck.title`, icon: "fa-solid fa-table-cells", resizable: true },
     position: { width: 620, height: "auto" },
     actions: { save: StreamDeckPanel.prototype._save, reconnect: StreamDeckPanel.prototype._reconnect,
-      generate: StreamDeckPanel.prototype._generate, disconnect: StreamDeckPanel.prototype._disconnect },
+      generate: StreamDeckPanel.prototype._generate, disconnect: StreamDeckPanel.prototype._disconnect,
+      openVariables: StreamDeckPanel.prototype._openVariables, openMacroArguments: StreamDeckPanel.prototype._openMacroArguments },
   };
   static PARTS = { body: { template: `modules/${MODULE_ID}/templates/stream-deck.hbs`, scrollable: [".jn-scroll"] } };
   _busy = false;
@@ -98,6 +101,8 @@ export class StreamDeckPanel extends HandlebarsApplicationMixin(ApplicationV2) {
   }
   _generate() { this._generated = randomNonce(); return this.render(); }
   _reconnect() { streamDeckBridge.refresh(); }
+  _openVariables() { return VariablePanel.open(); }
+  _openMacroArguments() { return MacroArgumentsPanel.open(); }
   _disconnect() {
     return this._run(async () => {
       await game.settings.set(MODULE_ID, SETTINGS.streamDeckEnabled, false);

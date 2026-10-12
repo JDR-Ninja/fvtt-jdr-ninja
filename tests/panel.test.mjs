@@ -12,15 +12,44 @@ class Application {
   async render() { this.rendered = true; this.renders.push(await this._prepareContext()); return this; }
   async close() { this.rendered = false; return this; }
   bringToFront() { this.fronted++; }
+  // The real mixin swaps the part's HTML: here the "HTML" is the list of fields the new content holds.
+  _replaceHTML(result, content) { content.fields = result; }
 }
-globalThis.foundry = { applications: { api: { ApplicationV2: Application, HandlebarsApplicationMixin: base => base } } };
+globalThis.foundry = { applications: { api: { ApplicationV2: Application, HandlebarsApplicationMixin: base => base } },
+  utils: { escapeHTML: value => Handlebars.escapeExpression(value),
+    isNewerVersion: (version, other) => String(version).localeCompare(String(other), undefined, { numeric: true }) > 0 } };
 globalThis.game = { settings: { get: (_module, key) => key.endsWith("Token") ? "fixture-secret" : "https://www.jdr.ninja" },
   user: { isGM: true, name: "GM" }, world: { title: "Test world" }, i18n: { localize: key => key, format: key => key } };
-const { ConnectionPanel, connectionPill, creaturePill } = await import("../scripts/connection-panel.js");
+const { ConnectionPanel, accountStatus, accountState, overlayState, creatureState, atlasState, streamDeckState } = await import("../scripts/connection-panel.js");
 const { streamDeckBridge } = await import("../scripts/stream-deck/bridge.js");
 const { MonsterGeneratorPanel, NpcGeneratorPanel } = await import("../scripts/creatures/panel.js");
 const { VariablePanel } = await import("../scripts/variables/panel.js");
 const { MacroArgumentsPanel } = await import("../scripts/variables/macro-panel.js");
+
+const flush = () => new Promise(resolve => setImmediate(resolve));
+// Earlier tests leave a locale installed: these ones compare keys, so they read the key itself as the text.
+const keysAsText = () => { game.i18n = { localize: key => key, format: key => key }; };
+/** Settings whose values a test controls; anything unset reads as saved tokens, the default site and switched-off features. */
+const fixtureSettings = (values = {}) => ({ values,
+  get: (_module, key) => key in values ? values[key] : key.endsWith("Token") ? "fixture-secret" : key.endsWith("Origin") ? "https://www.jdr.ninja" : false,
+  set: async (_module, key, value) => { values[key] = value; } });
+/** A GM world where the creature generators can import and Atlas can sync. */
+const compatibleWorld = () => {
+  game.system = { id: "dnd5e", title: "Dungeons & Dragons Fifth Edition", version: "5.3.3" };
+  game.release = { generation: 14 };
+};
+const leaveWorld = () => { delete game.system; delete game.release; };
+/** Records the answer a check gave, for the credential the panel holds now. */
+const settle = (panel, kind, result) => { panel._results[kind] = { ...result, stamp: panel._stamp(kind) }; };
+const withTemplate = async (language, callback) => {
+  const copy = JSON.parse(await readFile(new URL(`../lang/${language}.json`, import.meta.url), "utf8"));
+  const renderer = Handlebars.create();
+  renderer.registerHelper("localize", key => copy[key] ?? key);
+  const render = renderer.compile(await readFile(new URL("../templates/connections.hbs", import.meta.url), "utf8"));
+  return callback(render, copy);
+};
+const count = (html, pattern) => (html.match(pattern) ?? []).length;
+const actionNames = state => state.actions.map(control => control.variant ? `${control.name}.${control.variant}` : control.name);
 
 test("settings keep account tokens client-scoped and Atlas tokens world-scoped, outside native configuration fields", () => {
   const settings = [];
@@ -79,7 +108,7 @@ test("every settings menu registers a launcher that opens its window's singleton
 
 test("Connections has one window: reopening fronts it, the menu reuses it and closing allows a fresh one", async () => {
   const first = ConnectionPanel.open();
-  await new Promise(resolve => setImmediate(resolve));
+  await flush();
   assert.equal(first.renders.length, 1);
   assert.equal(ConnectionPanel.open(), first);
   const previous = game.settings;
@@ -112,59 +141,64 @@ test("players never see the GM-only creature and Twitch table switches in Config
 });
 
 test("render context never contains saved credentials or equates a stored token with verified authentication", async () => {
+  keysAsText();
   const panel = new ConnectionPanel();
   const context = await panel._prepareContext();
   assert(!JSON.stringify(context).includes("fixture-secret"));
-  assert.equal(context.account.configured, true);
-  assert.equal(context.account.status, "JDRNINJA.status.saved");
+  assert.equal(context.account.state, "unchecked");
+  assert.equal(context.account.pill.label, "JDRNINJA.status.saved");
   assert.equal(context.account.label, "");
-  panel._results.account = { ok: true, label: "Test account", allowed: false };
+  settle(panel, "account", { ok: true, label: "Test account", allowed: false });
   const checked = await panel._prepareContext();
-  assert.equal(checked.account.status, "JDRNINJA.status.connected");
-  assert.equal(checked.account.limited, true);
+  assert(!JSON.stringify(checked).includes("fixture-secret"));
+  assert.equal(checked.account.state, "verified");
+  assert.equal(checked.account.pill.label, "JDRNINJA.status.connected");
+  assert.equal(checked.account.label, "Test account");
 });
 
-test("the player context hides Atlas configuration", async () => {
+test("a player sees the account, Stream Deck and the overlay, never the creatures or Atlas", async () => {
   const previous = game.user.isGM;
   game.user.isGM = false;
   try {
     const context = await new ConnectionPanel()._prepareContext();
     assert.equal(context.isGM, false);
+    assert.deepEqual(context.features.map(feature => feature.id), ["stream-deck", "overlay"]);
     assert.equal(context.atlas.configured, false);
+    assert.equal(context.atlas.tokenInAdvanced, false);
   } finally { game.user.isGM = previous; }
 });
 
-test("Connections keeps one subscription link without an account, otherwise only after an access check finds no subscription", async () => {
+test("a subscription link appears only where a subscription is missing: no account, or a check that found none", async () => {
+  keysAsText();
   const savedAccess = creatureClient.access, savedSettings = game.settings;
-  const strings = JSON.parse(await readFile(new URL('../lang/fr.json', import.meta.url), 'utf8'));
-  const renderer = Handlebars.create(); renderer.registerHelper('localize', key => strings[key] ?? key);
-  const render = renderer.compile(await readFile(new URL('../templates/connections.hbs', import.meta.url), 'utf8'));
+  compatibleWorld();
   try {
-    for (const [token, account, creatureAccess, accountLink, creatureLink] of [
-      ['', null, null, true, false],
-      ['fixture-secret', null, null, false, false],
-      ['fixture-secret', { ok: false, reason: 'unauthorized' }, null, false, false],
-      ['fixture-secret', { ok: true, allowed: false }, { entitled: true }, true, false],
-      ['fixture-secret', { ok: true, allowed: true }, { entitled: false, reason: 'tierRequired' }, false, true],
-      ['fixture-secret', { ok: true, allowed: true }, { entitled: true, reason: 'devicePermissionRequired' }, false, false],
-    ]) {
-      game.settings = { ...savedSettings, get: (module, key) => key === "accountToken" ? token : savedSettings.get(module, key) };
-      const panel = new ConnectionPanel(); panel._results.account = account; creatureClient.access = creatureAccess;
-      const context = await panel._prepareContext(), html = render(context);
-      assert.equal(context.account.showSubscriptionLink, accountLink);
-      assert.equal(context.creatures.showSubscriptionLink, creatureLink);
-      assert.equal(html.includes('data-jdr-subscriptions="account"'), accountLink);
-      assert.equal(html.includes('data-jdr-subscriptions="creatures"'), creatureLink);
-      if (accountLink || creatureLink) assert(html.includes('href="https://www.jdr.ninja/abonnements" target="_blank" rel="noopener noreferrer"'));
-      // The creature card and its buttons carry no premium marker.
-      assert(html.includes(`>${Handlebars.escapeExpression(strings["JDRNINJA.creatures.heading"])}</h3>`));
-      for (const kind of ["monster", "npc"]) assert(html.includes(Handlebars.escapeExpression(strings[`JDRNINJA.creatures.${kind}Shortcut`])));
-      assert(!html.includes("fa-gem")); assert(!html.includes("(Premium)"));
-      const player = render({ ...context, isGM: false });
-      assert.equal(player.includes('data-jdr-subscriptions="account"'), accountLink);
-      assert(!player.includes('data-jdr-subscriptions="creatures"'));
-    }
-  } finally { creatureClient.access = savedAccess; game.settings = savedSettings; }
+    await withTemplate("fr", async render => {
+      for (const [values, account, atlas, access, links] of [
+        [{ accountToken: "" }, null, null, null, ["account"]],
+        [{}, null, null, null, []],
+        [{ overlayEnabled: true }, { ok: false, reason: "unauthorized" }, null, null, []],
+        [{ overlayEnabled: true }, { ok: true, label: "GM", allowed: false }, null, null, ["overlay"]],
+        [{ overlayEnabled: true, creaturesEnabled: true }, { ok: true, label: "GM", allowed: true }, null,
+          { allowed: false, entitled: false, reason: "tierRequired" }, ["creatures"]],
+        [{ creaturesEnabled: true }, null, null, { allowed: false, entitled: true, reason: "devicePermissionRequired" }, []],
+        [{ atlasEnabled: true }, null, { ok: true, label: "World", allowed: false }, null, ["atlas"]],
+      ]) {
+        game.settings = fixtureSettings(values);
+        creatureClient.access = access;
+        const panel = new ConnectionPanel();
+        if (account) settle(panel, "account", account);
+        if (atlas) settle(panel, "atlas", atlas);
+        const html = render(await panel._prepareContext());
+        assert.deepEqual([...html.matchAll(/data-jdr-subscriptions="(\w+)"/g)].map(match => match[1]), links, JSON.stringify(values));
+        for (const link of html.matchAll(/<a href="([^"]+)"[^>]*data-jdr-subscriptions/g)) {
+          assert(link[0].startsWith('<a href="https://www.jdr.ninja/abonnements" target="_blank" rel="noopener noreferrer"'));
+        }
+        // Nothing carries a premium marker.
+        assert(!html.includes("fa-gem")); assert(!html.includes("(Premium)"));
+      }
+    });
+  } finally { creatureClient.access = savedAccess; game.settings = savedSettings; leaveWorld(); }
 });
 
 test("the panel serializes operations and closing aborts a pending flow without rendering a late result", async () => {
@@ -176,7 +210,7 @@ test("the panel serializes operations and closing aborts a pending flow without 
     return new Promise(resolve => { release = resolve; });
   });
   // Allow the initial render and action to begin.
-  await new Promise(resolve => setImmediate(resolve));
+  await flush();
   let duplicate = false;
   await panel._run("account", async () => { duplicate = true; });
   assert.equal(duplicate, false);
@@ -195,68 +229,72 @@ test("a cancelled challenge is removed and another attempt is allowed", async ()
   const pending = panel._run("account", async signal => {
     panel._challenge = { userCode: "fixture-code", verificationUrl: "https://www.jdr.ninja/vtt-overlay/lier" };
     return new Promise(resolve => signal.addEventListener("abort", () => resolve({ ok: false, reason: "cancelled" }), { once: true }));
-  });
-  await new Promise(resolve => setImmediate(resolve));
+  }, { attempt: true, pairing: { creatures: false } });
+  await flush();
+  assert.equal((await panel._prepareContext()).account.state, "pairing");
   panel._cancel();
   await pending;
   assert.equal(panel._challenge, null);
   assert.equal(panel._operation, null);
+  assert.equal(panel._pairing, null);
   await panel._run("account", async () => ({ ok: true, label: "Another account", allowed: true }));
   assert.equal(panel._results.account.label, "Another account");
 });
 
-test("the real template renders every locale, hides Atlas for players, and escapes server-provided labels", async () => {
-  const template = Handlebars.compile(await readFile(new URL("../templates/connections.hbs", import.meta.url), "utf8"));
-  const renderer = Handlebars.create();
+test("the real template renders every locale, keeps creatures and Atlas from players, and escapes server-provided labels", async () => {
   const source = await readFile(new URL("../templates/connections.hbs", import.meta.url), "utf8");
-  for (const locale of ["fr", "en", "es", "de", "it"]) {
-    const copy = JSON.parse(await readFile(new URL(`../lang/${locale}.json`, import.meta.url), "utf8"));
-    game.i18n = { localize: key => copy[key] ?? key, format: (key, values) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, value), copy[key] ?? key) };
-    renderer.registerHelper("localize", key => copy[key] ?? key);
-    const render = renderer.compile(source);
-    const panel = new ConnectionPanel();
-    const context = await panel._prepareContext();
-    context.account.label = '<img src=x onerror="fixture()">';
-    context.account.status = copy["JDRNINJA.status.connected"];
-    context.atlas.status = copy["JDRNINJA.status.saved"];
-    context.atlas.integrationNotice = copy["JDRNINJA_ATLAS_SYNC.status.INTEGRATION_DISABLED"];
-    context.creatures.status = copy[context.creatures.status] ?? context.creatures.status;
-    context.account.error = copy["JDRNINJA.error.network"];
-    context.account.limited = true;
-    context.busy = true;
-    context.challenge = { userCode: "ABCD-EFGH", verificationUrl: "https://www.jdr.ninja/vtt-overlay/lier?code=ABCD-EFGH" };
-    const html = render(context);
-    assert(!html.includes("JDRNINJA."), `${locale}: unresolved locale key`);
-    assert(!html.includes("<img"));
-    assert(html.includes("&lt;img"));
-    assert(!html.includes("fixture-secret"));
-    assert(html.includes('name="atlasToken"'));
-    assert(html.includes('name="atlasEnabled" type="checkbox"'));
-    assert(html.includes('data-compatibility="dndRequired"'));
-    assert(html.includes(Handlebars.escapeExpression(copy['JDRNINJA.creatures.compatibility.dndRequired'])));
-    assert(html.includes('data-action="cancel"'));
-    assert(html.includes("ABCD-EFGH"));
-    assert(!render({ ...context, isGM: false }).includes('name="atlasToken"'));
-    assert(!render({ ...context, isGM: false }).includes('name="atlasEnabled"'));
-    // Services are pills with an icon and their text, never badges; the blocks are cards and sections, never fieldsets.
-    assert(!html.includes("<fieldset") && !html.includes("<legend") && !html.includes('class="badge'));
-    for (const action of html.matchAll(/data-action="(\w+)"/g)) {
-      assert.equal(typeof ConnectionPanel.DEFAULT_OPTIONS.actions[action[1]], "function", action[1]);
+  const previousGM = game.user.isGM;
+  try {
+    for (const locale of ["fr", "en", "es", "de", "it"]) {
+      const copy = JSON.parse(await readFile(new URL(`../lang/${locale}.json`, import.meta.url), "utf8"));
+      game.i18n = { localize: key => copy[key] ?? key, format: (key, values) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, value), copy[key] ?? key) };
+      const renderer = Handlebars.create();
+      renderer.registerHelper("localize", key => copy[key] ?? key);
+      const render = renderer.compile(source);
+      game.user.isGM = true;
+      const panel = new ConnectionPanel();
+      settle(panel, "account", { ok: true, label: '<img src=x onerror="fixture()">', allowed: true });
+      const context = await panel._prepareContext();
+      context.features.find(feature => feature.id === "atlas").summary = '<img src=y onerror="fixture()">';
+      context.busy = true;
+      context.challenge = { userCode: "ABCD-EFGH", verificationUrl: "https://www.jdr.ninja/vtt-overlay/lier?code=ABCD-EFGH" };
+      const html = render(context);
+      assert(!html.includes("JDRNINJA."), `${locale}: unresolved locale key`);
+      assert(!html.includes("<img"));
+      assert(html.includes("&lt;img src&#x3D;x") && html.includes("&lt;img src&#x3D;y"));
+      assert(!html.includes("fixture-secret"));
+      assert.equal(count(html, /name="atlasToken"/g), 1);
+      assert(html.includes('name="atlasEnabled" type="checkbox"'));
+      assert(html.includes('data-compatibility="dndRequired"'));
+      assert(html.includes(Handlebars.escapeExpression(copy["JDRNINJA.creatures.compatibility.dndRequired"])));
+      assert(html.includes('data-action="cancel"'));
+      assert(html.includes("ABCD-EFGH"));
+      game.user.isGM = false;
+      const player = render(await new ConnectionPanel()._prepareContext());
+      for (const hook of ['name="atlasToken"', 'name="atlasEnabled"', 'name="atlasOrigin"', 'name="creaturesEnabled"', 'data-action="pairCreatures"']) {
+        assert(!player.includes(hook), `${locale}: ${hook}`);
+      }
+      // States are pills with an icon and their text, never badges; the blocks are a card, rows and sections, never fieldsets.
+      assert(!html.includes("<fieldset") && !html.includes("<legend") && !html.includes('class="badge'));
+      for (const action of [...html.matchAll(/data-action="(\w+)"/g), ...player.matchAll(/data-action="(\w+)"/g)]) {
+        assert.equal(typeof ConnectionPanel.DEFAULT_OPTIONS.actions[action[1]], "function", action[1]);
+      }
     }
-  }
-  assert.equal(typeof template, "function");
+  } finally { game.user.isGM = previousGM; }
 });
 
-test("the integration checkbox persists a boolean and refuses changes by a player", async () => {
-  const saved = [];
+test("the integration checkbox persists a boolean, checks a saved world token as it turns on, and refuses a player", async () => {
+  const saved = [], checks = [];
   const previous = game.settings;
   const previousGM = game.user.isGM;
   game.settings = { ...previous, set: async (_module, key, value) => saved.push([key, value]) };
   const panel = new ConnectionPanel();
+  panel._autoCheck = kind => checks.push(kind);
   try {
     await panel._toggleAtlas({ currentTarget: { checked: true } });
     await panel._toggleAtlas({ currentTarget: { checked: false } });
     assert.deepEqual(saved, [["atlasEnabled", true], ["atlasEnabled", false]]);
+    assert.deepEqual(checks, ["atlas"]);
     game.user.isGM = false;
     await panel._toggleAtlas({ currentTarget: { checked: true } });
     assert.equal(saved.length, 2);
@@ -275,111 +313,139 @@ test("cancelling before the initial render completes prevents a local operation"
   assert.equal(changed, false);
 });
 
-const withTemplate = async (language, callback) => {
-  const copy = JSON.parse(await readFile(new URL(`../lang/${language}.json`, import.meta.url), "utf8"));
-  const renderer = Handlebars.create();
-  renderer.registerHelper("localize", key => copy[key] ?? key);
-  const render = renderer.compile(await readFile(new URL("../templates/connections.hbs", import.meta.url), "utf8"));
-  return callback(render, copy);
-};
-const count = (html, pattern) => (html.match(pattern) ?? []).length;
-// Earlier tests leave a locale installed: these ones compare keys, so they read the key itself as the text.
-const keysAsText = () => { game.i18n = { localize: key => key, format: key => key }; };
-
-test("a connection state maps to one pill level, derived from the state alone", () => {
-  assert.deepEqual(connectionPill({ configured: false, verified: false, failed: false }), { level: "neutral", icon: "fa-circle-minus" });
-  assert.deepEqual(connectionPill({ configured: true, verified: false, failed: false }), { level: "warning", icon: "fa-triangle-exclamation" });
-  assert.deepEqual(connectionPill({ configured: true, verified: false, failed: true }), { level: "error", icon: "fa-circle-xmark" });
-  assert.deepEqual(connectionPill({ configured: false, verified: false, failed: true }), { level: "error", icon: "fa-circle-xmark" });
-  assert.deepEqual(connectionPill({ configured: true, verified: true, failed: false }), { level: "success", icon: "fa-circle-check" });
-});
-
-test("the account and Atlas pills follow the saved token and the last check", async () => {
+test("the account banner maps each state to one pill, its message and only the actions that state needs", () => {
   keysAsText();
-  const savedSettings = game.settings;
-  try {
-    game.settings = { ...savedSettings, get: (module, key) => key === "accountToken" ? "" : savedSettings.get(module, key) };
-    assert.equal((await new ConnectionPanel()._prepareContext()).account.pill.level, "neutral");
-    // A panel reads the settings it was created with.
-    game.settings = savedSettings;
-    const panel = new ConnectionPanel();
-    const stored = await panel._prepareContext();
-    assert.equal(stored.account.pill.level, "warning");
-    assert.equal(stored.atlas.pill.level, "warning");
-    panel._results.account = { ok: false, reason: "unauthorized" };
-    const rejected = await panel._prepareContext();
-    assert.equal(rejected.account.pill.level, "error");
-    assert.equal(rejected.account.status, "JDRNINJA.status.saved");
-    assert.equal(rejected.atlas.pill.level, "warning");
-    panel._results.account = { ok: false, reason: "unconfigured" };
-    assert.equal((await panel._prepareContext()).account.pill.level, "warning");
-    panel._results.account = { ok: true, label: "Account", allowed: false };
-    panel._results.atlas = { ok: true, label: "World", allowed: true };
-    const verified = await panel._prepareContext();
-    assert.equal(verified.account.pill.level, "success");
-    assert.equal(verified.atlas.pill.level, "success");
-  } finally { game.settings = savedSettings; }
+  const row = state => [state.state, state.pill.level, state.pill.label, actionNames(state), state.error];
+  assert.deepEqual(row(accountState({ configured: false })),
+    ["none", "neutral", "JDRNINJA.status.disconnected", ["pair.bright"], ""]);
+  const none = accountState({ configured: false, result: { ok: false, reason: "unconfigured" } });
+  assert.deepEqual([none.state, none.intro, none.link.kind, none.link.href], ["none", "JDRNINJA.account.needed", "account", "https://www.jdr.ninja/abonnements"]);
+  assert.deepEqual(row(accountState({ configured: false, pairing: true })), ["pairing", "info", "JDRNINJA.panel.state.pending", [], ""]);
+  const checking = accountState({ configured: true, checking: true });
+  assert.deepEqual([...row(checking), checking.pill.icon], ["checking", "info", "JDRNINJA.panel.state.checking", ["disconnectAccount.jn-danger"], "", "fa-spinner fa-spin"]);
+  const verified = accountState({ configured: true, result: { ok: true, label: "Demo GM", allowed: false } });
+  assert.deepEqual([...row(verified), verified.label, verified.intro, verified.link],
+    ["verified", "success", "JDRNINJA.status.connected", ["pair", "disconnectAccount.jn-danger"], "", "Demo GM", "", null]);
+  assert.equal(verified.actions[0].label, "JDRNINJA.account.change");
+  for (const reason of ["network", "server", "rateLimited", "invalidClientHeader"]) {
+    const state = accountState({ configured: true, result: { ok: false, reason } });
+    assert.deepEqual(row(state), ["retry", "error", "JDRNINJA.panel.state.error", ["checkAccount", "disconnectAccount.jn-danger"], `JDRNINJA.error.${reason}`], reason);
+    assert.equal(state.actions[0].label, "JDRNINJA.button.retry");
+  }
+  for (const reason of ["unauthorized", "invalidResponse"]) {
+    const state = accountState({ configured: true, result: { ok: false, reason } });
+    assert.deepEqual(row(state), ["reconnect", "error", "JDRNINJA.panel.state.error", ["pair", "disconnectAccount.jn-danger"], `JDRNINJA.error.${reason}`], reason);
+    assert.equal(state.actions[0].label, "JDRNINJA.button.reconnect");
+  }
+  assert.deepEqual(row(accountState({ configured: true })), ["unchecked", "warning", "JDRNINJA.status.saved", ["checkAccount", "disconnectAccount.jn-danger"], ""]);
+  // A failed pairing keeps the state of the saved credential and adds its own message.
+  assert.deepEqual(row(accountState({ configured: true, result: { ok: true, label: "Demo GM" }, error: "Denied" })),
+    ["verified", "success", "JDRNINJA.status.connected", ["pair", "disconnectAccount.jn-danger"], "Denied"]);
+  assert.equal(accountStatus({ configured: true, result: { ok: true }, checking: true }), "checking");
+  assert.equal(accountStatus({ configured: true, result: { ok: false, reason: "unconfigured" } }), "unchecked");
 });
 
-test("the creatures pill puts an incompatible system first, then the access state, and an error for anything the server reports", () => {
+test("the overlay row needs the account, then its subscription, and says which step is missing", () => {
+  keysAsText();
+  const row = state => [state.state, state.pill.level, state.pill.label, state.step?.level ?? null, state.step?.role ?? null, state.step?.text ?? null];
+  assert.deepEqual(row(overlayState({ enabled: false, account: "verified", allowed: true })), ["disabled", "neutral", "JDRNINJA.panel.state.disabled", null, null, null]);
+  assert.deepEqual(row(overlayState({ enabled: true, legacy: true, account: "verified", allowed: true })),
+    ["unavailable", "error", "JDRNINJA.panel.state.unavailable", "error", "alert", "JDRNINJA.overlay.error.legacyActive"]);
+  assert.deepEqual(row(overlayState({ enabled: true, account: "none" })),
+    ["accountRequired", "warning", "JDRNINJA.panel.state.accountRequired", "warning", "status", "JDRNINJA.panel.step.connectAccount"]);
+  assert.deepEqual(row(overlayState({ enabled: true, account: "checking" })), ["checking", "info", "JDRNINJA.panel.state.checking", null, null, null]);
+  const limited = overlayState({ enabled: true, account: "verified", allowed: false });
+  assert.deepEqual([...row(limited), limited.step.link.kind],
+    ["subscriptionRequired", "warning", "JDRNINJA.panel.state.subscriptionRequired", "warning", "status", "JDRNINJA.overlay.error.notEntitled", "overlay"]);
+  assert.deepEqual(row(overlayState({ enabled: true, account: "verified", allowed: true })), ["active", "success", "JDRNINJA.panel.state.active", null, null, null]);
+  assert.equal(overlayState({ enabled: true, account: "reconnect" }).step.text, "JDRNINJA.panel.step.reconnectAccount");
+  for (const account of ["retry", "unchecked"]) {
+    assert.deepEqual(row(overlayState({ enabled: true, account })),
+      ["attention", "warning", "JDRNINJA.panel.state.attention", "warning", "status", "JDRNINJA.panel.step.checkAccount"], account);
+  }
+});
+
+test("the creatures row puts the system first, offers the device permission only when it is missing, and no button once available", () => {
   keysAsText();
   const compatible = { compatible: true, code: "compatible", label: "compatible" };
-  const levels = status => creaturePill(status, compatible);
-  assert.deepEqual([levels("available").level, levels("available").label, levels("available").message], ["success", "JDRNINJA.creatures.status.available", ""]);
-  assert.deepEqual([levels("notChecked").level, levels("notChecked").label], ["neutral", "JDRNINJA.creatures.status.notChecked"]);
-  assert.deepEqual([levels("disabled").level, levels("disabled").label, levels("disabled").message], ["neutral", "JDRNINJA.panel.state.disabled", ""]);
-  for (const status of ["connectionRequired", "devicePermissionRequired", "tierRequired", "incompatibleSystem"]) {
-    const pill = levels(status);
-    assert.deepEqual([pill.level, pill.label, pill.message], ["warning", "JDRNINJA.panel.state.attention", `JDRNINJA.creatures.error.${status}`], status);
+  const state = options => creatureState({ compatibility: compatible, ...options });
+  const row = value => [value.state, value.pill.level, value.pill.label, value.step?.text ?? null, value.step?.action?.name ?? null, value.step?.link?.kind ?? null];
+  // Another game system cannot import at all; an untested version only warns. Both name the cause and the requirement.
+  const other = creatureState({ compatibility: { compatible: false, code: "dndRequired", label: "D&D required", current: "System: pf2e" }, restriction: "disabled" });
+  assert.deepEqual([...row(other), other.step.detail, other.step.role], ["incompatible", "error", "D&D required", "System: pf2e", null, null, "JDRNINJA.creatures.error.incompatibleSystem", "alert"]);
+  const version = creatureState({ compatibility: { compatible: false, code: "versionUnsupported", label: "Untested version", current: "System: dnd5e 4" } });
+  assert.deepEqual(row(version).slice(0, 3), ["incompatible", "warning", "Untested version"]);
+  assert.deepEqual(row(state({ restriction: "disabled" })), ["disabled", "neutral", "JDRNINJA.panel.state.disabled", null, null, null]);
+  assert.deepEqual(row(state({ restriction: "connectionRequired" })),
+    ["accountRequired", "warning", "JDRNINJA.panel.state.accountRequired", "JDRNINJA.panel.step.connectAccount", null, null]);
+  assert.deepEqual(row(state({ checking: true })), ["checking", "info", "JDRNINJA.panel.state.checking", null, null, null]);
+  const available = state({ access: { allowed: true, entitled: true } });
+  assert.deepEqual([...row(available), available.step.level], ["available", "success", "JDRNINJA.creatures.status.available", "JDRNINJA.panel.step.creaturesAvailable", null, null, "info"]);
+  for (const permission of [state({ access: { allowed: false, entitled: true, reason: "devicePermissionRequired" } }),
+    state({ result: { ok: false, reason: "devicePermissionRequired" } })]) {
+    assert.deepEqual(row(permission), ["devicePermissionRequired", "warning", "JDRNINJA.panel.state.permissionRequired",
+      "JDRNINJA.panel.step.devicePermission", "pairCreatures", null]);
+    assert.equal(permission.step.action.label, "JDRNINJA.creatures.authorize");
   }
-  for (const status of ["verificationUnavailable", "unauthorized", "apiUnavailable", "somethingNew"]) {
-    const pill = levels(status);
-    assert.deepEqual([pill.level, pill.label], ["error", "JDRNINJA.panel.state.unavailable"], status);
+  assert.deepEqual(row(state({ access: { allowed: false, entitled: false, reason: "tierRequired" } })),
+    ["tierRequired", "warning", "JDRNINJA.panel.state.subscriptionRequired", "JDRNINJA.creatures.error.tierRequired", null, "creatures"]);
+  for (const reason of ["unauthorized", "wrongDeviceKind"]) {
+    assert.deepEqual(row(state({ result: { ok: false, reason } })), ["attention", "warning", "JDRNINJA.panel.state.attention", "JDRNINJA.panel.step.reconnectAccount", null, null], reason);
   }
-  assert.deepEqual([levels("available").icon, levels("tierRequired").icon, levels("other").icon, levels("notChecked").icon],
-    ["fa-circle-check", "fa-triangle-exclamation", "fa-circle-xmark", "fa-circle-minus"]);
-  // Another game system cannot import at all; an untested version only warns. Both name the cause in the pill.
-  const other = creaturePill("available", { compatible: false, code: "dndRequired", label: "D&D required" });
-  assert.deepEqual([other.level, other.label, other.message], ["error", "D&D required", ""]);
-  const version = creaturePill("disabled", { compatible: false, code: "versionUnsupported", label: "Untested version" });
-  assert.deepEqual([version.level, version.label], ["warning", "Untested version"]);
+  assert.deepEqual(row(state({})), ["notChecked", "neutral", "JDRNINJA.creatures.status.notChecked", "", "checkCreatures", null]);
+  for (const reason of ["verificationUnavailable", "apiUnavailable", "network", "somethingNew"]) {
+    const failed = state({ result: { ok: false, reason } });
+    assert.deepEqual([...row(failed), failed.step.role, failed.step.action.label],
+      ["unavailable", "error", "JDRNINJA.panel.state.unavailable", `JDRNINJA.creatures.error.${reason}`, "checkCreatures", null, "alert", "JDRNINJA.button.retry"], reason);
+  }
+  // A grant wins over an older failure of this window.
+  assert.equal(state({ access: { allowed: true }, result: { ok: false, reason: "network" } }).state, "available");
+  // The device permission is the only state that asks for a new authorization.
+  const every = [other, version, state({ restriction: "disabled" }), state({ restriction: "connectionRequired" }), state({ checking: true }), available,
+    state({ access: { allowed: false, reason: "tierRequired" } }), state({ result: { ok: false, reason: "unauthorized" } }), state({}),
+    state({ result: { ok: false, reason: "network" } }), state({ access: { allowed: false, reason: "devicePermissionRequired" } })];
+  assert.deepEqual(every.filter(value => value.step?.action?.name === "pairCreatures").map(value => value.state), ["devicePermissionRequired"]);
 });
 
-test("the Stream Deck card carries the pill of the bridge state", async () => {
+test("the Atlas row asks for its token in the row, reports the world once verified, and offers a new check only after a failure", () => {
+  keysAsText();
+  const row = value => [value.state, value.pill.level, value.pill.label, value.step?.text ?? null, value.step?.field === true, value.step?.action?.name ?? null, value.label];
+  assert.deepEqual(row(atlasState({ enabled: true, notice: "Legacy module", configured: true })), ["unavailable", "error", "JDRNINJA.panel.state.unavailable", "Legacy module", false, null, ""]);
+  assert.deepEqual(row(atlasState({ enabled: false, configured: true })), ["disabled", "neutral", "JDRNINJA.panel.state.disabled", null, false, null, ""]);
+  assert.deepEqual(row(atlasState({ enabled: true, configured: true, checking: true })), ["checking", "info", "JDRNINJA.panel.state.checking", null, false, null, ""]);
+  assert.deepEqual(row(atlasState({ enabled: true, configured: false })), ["tokenRequired", "warning", "JDRNINJA.panel.state.tokenRequired", "", true, null, ""]);
+  assert.deepEqual(row(atlasState({ enabled: true, configured: true, result: { ok: true, label: "Sunken Crown", allowed: true } })),
+    ["connected", "success", "JDRNINJA.status.connected", null, false, null, "Sunken Crown"]);
+  const limited = atlasState({ enabled: true, configured: true, result: { ok: true, label: "Sunken Crown", allowed: false } });
+  assert.deepEqual([...row(limited), limited.step.link.kind],
+    ["subscriptionRequired", "warning", "JDRNINJA.panel.state.subscriptionRequired", "JDRNINJA.atlas.limited", false, null, "Sunken Crown", "atlas"]);
+  const rejected = atlasState({ enabled: true, configured: true, result: { ok: false, reason: "unauthorized" } });
+  assert.deepEqual([...row(rejected), rejected.step.role], ["rejected", "error", "JDRNINJA.panel.state.error", "JDRNINJA.error.unauthorized", true, null, "", "alert"]);
+  const failed = atlasState({ enabled: true, configured: true, result: { ok: false, reason: "network" } });
+  assert.deepEqual([...row(failed), failed.step.action.label], ["failed", "error", "JDRNINJA.panel.state.error", "JDRNINJA.error.network", false, "checkAtlas", "", "JDRNINJA.button.retry"]);
+  assert.deepEqual(row(atlasState({ enabled: true, configured: true })), ["unchecked", "warning", "JDRNINJA.status.saved", "", false, "checkAtlas", ""]);
+  // A pasted token that failed keeps the field and says why.
+  const refused = atlasState({ enabled: true, configured: false, error: "Refused" });
+  assert.deepEqual([refused.state, refused.step.level, refused.step.role, refused.step.text, refused.step.field], ["tokenRequired", "error", "alert", "Refused", true]);
+  const kept = atlasState({ enabled: true, configured: true, result: { ok: true, label: "Sunken Crown", allowed: true }, error: "Refused" });
+  assert.deepEqual([kept.state, kept.step.text, kept.label], ["connected", "Refused", "Sunken Crown"]);
+});
+
+test("the Stream Deck row carries the pill of the bridge state and asks for the companion key only when it is missing", async () => {
   keysAsText();
   const saved = streamDeckBridge.state;
   try {
-    for (const [state, level] of [["ready", "success"], ["connecting", "warning"], ["disabled", "neutral"], ["disconnected", "error"]]) {
+    for (const [state, level] of [["ready", "success"], ["connecting", "warning"], ["disabled", "neutral"], ["disconnected", "error"], ["unconfigured", "error"]]) {
       streamDeckBridge.state = state;
-      const context = await new ConnectionPanel()._prepareContext();
-      assert.equal(context.streamDeck.pill.level, level, state);
-      assert.equal(context.streamDeck.pill.label, `JDRNINJA.streamDeck.state.${state}`);
+      const row = (await new ConnectionPanel()._prepareContext()).features[0];
+      assert.equal(row.id, "stream-deck");
+      assert.equal(row.pill.level, level, state);
+      assert.equal(row.pill.label, `JDRNINJA.streamDeck.state.${state}`);
+      assert.equal(row.step?.text ?? null, state === "unconfigured" ? "JDRNINJA.panel.step.streamDeckKey" : null, state);
+      assert.equal(row.step?.action ?? null, null);
     }
+    assert.deepEqual(streamDeckState("unconfigured").step.role, "status");
   } finally { streamDeckBridge.state = saved; }
-});
-
-test("the creatures card states a restriction once: as the pill message, or as the alert of the check that failed", async () => {
-  keysAsText();
-  const savedSettings = game.settings, savedAccess = creatureClient.access;
-  game.system = { id: "dnd5e", title: "Dungeons & Dragons Fifth Edition", version: "5.3.3" };
-  game.release = { generation: 14 };
-  game.settings = { ...savedSettings, get: (module, key) => key === "creaturesEnabled" ? true : savedSettings.get(module, key) };
-  try {
-    creatureClient.access = { allowed: false, entitled: false, reason: "tierRequired" };
-    const panel = new ConnectionPanel();
-    let context = await panel._prepareContext();
-    assert.equal(context.creatures.compatibility.compatible, true);
-    assert.deepEqual([context.creatures.pill.level, context.creatures.message, context.creatures.error],
-      ["warning", "JDRNINJA.creatures.error.tierRequired", ""]);
-    panel._results.creatures = { ok: false, reason: "tierRequired" };
-    context = await panel._prepareContext();
-    assert.deepEqual([context.creatures.pill.level, context.creatures.message, context.creatures.error],
-      ["warning", "", "JDRNINJA.creatures.error.tierRequired"]);
-    creatureClient.access = { allowed: true, entitled: true };
-    panel._results.creatures = { ok: true };
-    context = await panel._prepareContext();
-    assert.deepEqual([context.creatures.pill.level, context.creatures.message, context.creatures.error], ["success", "", ""]);
-  } finally { delete game.system; delete game.release; game.settings = savedSettings; creatureClient.access = savedAccess; }
 });
 
 test("the Stream Deck pill follows the bridge without a new render, and closing stops it", async () => {
@@ -407,80 +473,388 @@ test("the Stream Deck pill follows the bridge without a new render, and closing 
   } finally { await panel.close(); streamDeckBridge.state = saved; streamDeckBridge.error = ""; }
 });
 
-test("the Connections template keeps one card per service and one primary action at most", async () => {
-  for (const language of ["en", "fr"]) await withTemplate(language, async (render, copy) => {
-    const context = await new ConnectionPanel()._prepareContext();
-    const html = render(context);
-    assert.equal(count(html, /class="jn-card /g), 4, language);
-    assert.equal(count(render({ ...context, isGM: false }), /class="jn-card /g), 2, language);
-    // Each service has its name as a heading and its own pill; nothing is a fieldset.
-    for (const service of ["stream-deck", "account", "creatures", "atlas"]) {
-      assert(html.includes(`<h3 id="jdr-ninja-service-${service}">`), service);
-      assert(html.includes(`aria-labelledby="jdr-ninja-service-${service}"`), service);
-    }
-    assert(!html.includes("<fieldset") && !html.includes("<legend"));
-    assert.equal(count(html, /class="jn-pill /g), 4);
-    // A pill is never colour alone: it holds an icon and a text.
-    for (const pill of html.matchAll(/<span class="jn-pill [^>]*>(.*?)<\/span>/g)) {
-      assert(/<i class="fa-solid [\w -]+" aria-hidden="true"/.test(pill[1]), pill[0]);
-      assert(/[^<>\s]/.test(pill[1].replace(/<[^>]*>/g, "")), pill[0]);
-    }
-    // A browser without an account has one primary action: connect. Once connected there is none.
-    const unconnected = render({ ...context, account: { ...context.account, configured: false } });
-    assert.equal(count(unconnected, /class="bright"/g), 1);
-    assert(/class="bright" data-action="pair"/.test(unconnected));
-    assert.equal(count(render({ ...context, account: { ...context.account, configured: true } }), /class="bright"/g), 0);
-    // Destructive actions use the error colour; the actions that only change state do not.
-    for (const action of ["disconnectAccount", "disconnectAtlas"]) assert(html.includes(`class="jn-danger" data-action="${action}"`), action);
-    for (const action of ["pair", "checkAccount", "saveAtlas", "checkAtlas", "openOverlay", "openStreamDeck", "openAtlas"]) {
-      assert(!new RegExp(`class="jn-danger" data-action="${action}"`).test(html), action);
-    }
-    // The enable hints are tooltips on focusable icons that also carry the text for assistive technology.
-    const hints = [...html.matchAll(/<i class="fa-solid fa-circle-info jn-info"[^>]*>/g)].map(match => match[0]);
-    assert(hints.length >= 5);
-    for (const hint of hints) {
-      assert(/tabindex="0"/.test(hint) && /role="img"/.test(hint) && /aria-label="[^"]+"/.test(hint) && /data-tooltip="[^"]+"/.test(hint), hint);
-    }
-    for (const key of ["streamDeck.enableHint", "overlay.enableHint", "creatures.enableHint", "atlas.enableHint"]) {
-      const text = Handlebars.escapeExpression(copy[`JDRNINJA.${key}`]);
-      assert(html.includes(`data-tooltip="${text}"`), key);
-      assert(!html.includes(`<p class="hint">${text}</p>`), key);
-    }
-    // The statements about who shares a credential stay visible.
-    for (const key of ["account.hint", "atlas.hint"]) assert(html.includes(Handlebars.escapeExpression(copy[`JDRNINJA.${key}`])), key);
-    // Every field has its label, and every service switch also names its card.
-    for (const input of html.matchAll(/<input id="([\w-]+)"/g)) assert(html.includes(`for="${input[1]}"`), input[1]);
-    for (const input of html.matchAll(/<input id="[\w-]+" name="(?:streamDeck|creatures|atlas)Enabled"[^>]*>/g)) {
-      assert(/aria-labelledby="[\w-]+ jdr-ninja-service-[\w-]+"/.test(input[0]), input[0]);
-    }
-  });
+test("Connections shows each connection once: the account in its banner, then one row per feature", async () => {
+  keysAsText();
+  const previousGM = game.user.isGM, savedSettings = game.settings;
+  try {
+    for (const language of ["en", "fr"]) await withTemplate(language, async (render, copy) => {
+      game.user.isGM = true;
+      const html = render(await new ConnectionPanel()._prepareContext());
+      assert.equal(count(html, /class="jn-card /g), 1, language);
+      assert(html.includes('<section class="jn-card jdr-ninja__banner" role="group" aria-labelledby="jdr-ninja-account-name"'));
+      assert.deepEqual([...html.matchAll(/data-feature="([\w-]+)"/g)].map(match => match[1]), ["stream-deck", "overlay", "creatures", "atlas"]);
+      for (const service of ["stream-deck", "overlay", "creatures", "atlas"]) {
+        assert(html.includes(`<h4 id="jdr-ninja-service-${service}">`), service);
+        assert(html.includes(`role="group" aria-labelledby="jdr-ninja-service-${service}"`), service);
+      }
+      // The duplicated account and Atlas sections, the intro and the shortcuts left the window.
+      assert(!html.includes("jdr-ninja__status") && !html.includes("jdr-ninja__services"));
+      // Their copy was deleted from every locale: no key may render, and none may come back as an unused string.
+      for (const key of ["panel.intro", "account.hint", "atlas.hint", "panel.enableBrowser", "panel.enableWorld", "creatures.permissionHint",
+        "account.disconnect", "account.limited", "atlas.heading"]) {
+        assert(!html.includes(`JDRNINJA.${key}`) && !(`JDRNINJA.${key}` in copy), key);
+      }
+      // These stay for the native settings or the confirmations: their text is not shown in the window.
+      for (const key of ["overlay.enableHint", "creatures.enableHint", "atlas.enableHint", "account.disconnectHint", "atlas.disconnectHint"]) {
+        assert(!html.includes(Handlebars.escapeExpression(copy[`JDRNINJA.${key}`])) && !html.includes(`JDRNINJA.${key}`), key);
+      }
+      for (const action of ["openVariables", "openMacroArguments", "openMonster", "openNpc"]) {
+        assert(!html.includes(`data-action="${action}"`), action);
+        assert.equal(ConnectionPanel.DEFAULT_OPTIONS.actions[action], undefined, action);
+      }
+      game.user.isGM = false;
+      const player = render(await new ConnectionPanel()._prepareContext());
+      assert.deepEqual([...player.matchAll(/data-feature="([\w-]+)"/g)].map(match => match[1]), ["stream-deck", "overlay"]);
+      game.user.isGM = true;
+      // A pill is never colour alone: it holds an icon and a text.
+      assert.equal(count(html, /class="jn-pill /g), 5);
+      for (const pill of html.matchAll(/<span class="jn-pill [^>]*>(.*?)<\/span>/g)) {
+        assert(/<i class="fa-solid [\w -]+" aria-hidden="true"/.test(pill[1]), pill[0]);
+        assert(/[^<>\s]/.test(pill[1].replace(/<[^>]*>/g, "")), pill[0]);
+      }
+      // Only the Stream Deck switch keeps its information icon: it carries the security note.
+      const hints = [...html.matchAll(/<i class="fa-solid fa-circle-info jn-info"[^>]*>/g)].map(match => match[0]);
+      assert.equal(hints.length, 1);
+      assert(/tabindex="0"/.test(hints[0]) && /role="img"/.test(hints[0]) && hints[0].includes('aria-label="JDRNINJA.streamDeck.enableHint" data-tooltip="JDRNINJA.streamDeck.enableHint"'));
+      // Every field has its label, and every switch is named « Enable » plus its feature.
+      for (const input of html.matchAll(/<input id="([\w-]+)"/g)) assert(html.includes(`for="${input[1]}"`), input[1]);
+      const switches = [...html.matchAll(/<input id="jdr-ninja-([\w-]+)-enabled" name="(\w+)" type="checkbox" aria-labelledby="([^"]+)"/g)];
+      assert.deepEqual(switches.map(match => match[2]), ["streamDeckEnabled", "overlayEnabled", "creaturesEnabled", "atlasEnabled"]);
+      for (const [, id, , labelledBy] of switches) assert.equal(labelledBy, `jdr-ninja-${id}-enabled-label jdr-ninja-service-${id}`);
+      assert.equal(count(html, new RegExp(`>${copy["JDRNINJA.panel.enable"]}</label>`, "g")), 4);
+      // The windows of the features are icon buttons with their name for assistive technology and as a tooltip.
+      for (const action of ["openStreamDeck", "openOverlay", "openAtlas"]) {
+        assert(new RegExp(`<button type="button" class="jn-icon-button jdr-ninja__open" data-action="${action}" aria-label="[^"]+" data-tooltip="[^"]+"`).test(html), action);
+      }
+    });
+  } finally { game.user.isGM = previousGM; game.settings = savedSettings; }
+});
+
+test("Connections has one primary action at most, and its disconnections use the error colour", async () => {
+  keysAsText();
+  const savedSettings = game.settings, savedAccess = creatureClient.access;
+  compatibleWorld();
+  try {
+    await withTemplate("en", async render => {
+      const states = [];
+      for (const [values, account, atlas, access] of [
+        [{ accountToken: "", atlasToken: "" }, null, null, null],
+        [{ accountToken: "", atlasToken: "", atlasEnabled: true, creaturesEnabled: true }, null, null, null],
+        [{ atlasEnabled: true, creaturesEnabled: true, overlayEnabled: true }, { ok: true, label: "GM", allowed: true }, { ok: true, label: "World", allowed: true }, { allowed: true }],
+        [{ atlasEnabled: true, creaturesEnabled: true }, { ok: false, reason: "network" }, { ok: false, reason: "unauthorized" }, { allowed: false, reason: "devicePermissionRequired" }],
+      ]) {
+        game.settings = fixtureSettings(values);
+        creatureClient.access = access;
+        const panel = new ConnectionPanel();
+        if (account) settle(panel, "account", account);
+        if (atlas) settle(panel, "atlas", atlas);
+        const html = render(await panel._prepareContext());
+        states.push(html);
+        assert(count(html, /class="bright"/g) <= 1, JSON.stringify(values));
+        for (const action of ["pair", "checkAccount", "saveAtlas", "checkAtlas", "openOverlay", "openStreamDeck", "openAtlas", "pairCreatures", "checkCreatures", "saveAccount"]) {
+          assert(!new RegExp(`class="[^"]*jn-danger[^"]*" data-action="${action}"`).test(html), action);
+        }
+      }
+      // Without an account the one primary action is connecting it; once a token is saved there is none.
+      assert.equal(count(states[0], /class="bright" data-action="pair"/g), 1);
+      assert.equal(count(states[2], /class="bright"/g), 0);
+      for (const html of states.slice(2)) {
+        assert(html.includes('class="jn-danger" data-action="disconnectAccount"'));
+        assert(html.includes('class="jn-danger" data-action="disconnectAtlas"'));
+      }
+      // Authorizing on the site appears only while the device permission is missing.
+      assert.deepEqual(states.map(html => html.includes('data-action="pairCreatures"')), [false, false, false, true]);
+    });
+  } finally { game.settings = savedSettings; creatureClient.access = savedAccess; leaveWorld(); }
+});
+
+test("one Atlas token field at most: in the row while no token is saved or the saved one is refused, otherwise in the advanced options", async () => {
+  keysAsText();
+  const savedSettings = game.settings;
+  compatibleWorld();
+  try {
+    await withTemplate("en", async render => {
+      for (const [values, atlas, place] of [
+        [{ atlasEnabled: true, atlasToken: "" }, null, "row"],
+        [{ atlasEnabled: true }, { ok: true, label: "World", allowed: true }, "advanced"],
+        [{ atlasEnabled: true }, { ok: false, reason: "unauthorized" }, "row"],
+        [{ atlasEnabled: true }, { ok: false, reason: "network" }, "advanced"],
+        [{ atlasEnabled: false }, null, "advanced"],
+        [{ atlasEnabled: false, atlasToken: "" }, null, "none"],
+      ]) {
+        game.settings = fixtureSettings(values);
+        const panel = new ConnectionPanel();
+        if (atlas) settle(panel, "atlas", atlas);
+        const html = render(await panel._prepareContext()), advanced = html.indexOf("<details");
+        const fields = [...html.matchAll(/name="atlasToken"/g)].map(match => match.index < advanced ? "row" : "advanced");
+        assert.deepEqual(fields, place === "none" ? [] : [place], JSON.stringify([values, atlas]));
+        assert.equal(count(html, /id="jdr-ninja-atlas-token"/g), fields.length);
+        // The site address stays in the advanced options even when they are closed: saving and pairing read it.
+        assert(html.indexOf('name="atlasOrigin"') > advanced && html.indexOf('name="accountOrigin"') > advanced);
+      }
+    });
+  } finally { game.settings = savedSettings; leaveWorld(); }
 });
 
 test("the Connections template keeps the hooks the code and the screenshot tool use, with advanced settings folded away", async () => {
-  await withTemplate("en", async render => {
+  keysAsText();
+  const savedSettings = game.settings, savedAccess = creatureClient.access;
+  compatibleWorld();
+  try {
+    await withTemplate("en", async (render, copy) => {
+      game.settings = fixtureSettings({ atlasEnabled: true, creaturesEnabled: true, overlayEnabled: true });
+      creatureClient.access = { allowed: true, entitled: true };
+      const panel = new ConnectionPanel();
+      settle(panel, "account", { ok: true, label: "Demo account", allowed: true });
+      settle(panel, "atlas", { ok: true, label: "Demo world", allowed: true });
+      game.i18n = { localize: key => key, format: (key, values) => `${key} ${values.name}` };
+      const context = await panel._prepareContext();
+      const html = render(context);
+      // The account name is the banner's heading; the Atlas world is in its row's sentence, with the row's state.
+      assert(html.includes('<section class="jn-card jdr-ninja__banner" role="group" aria-labelledby="jdr-ninja-account-name" data-state="verified">'));
+      assert(html.includes('<h3 id="jdr-ninja-account-name" data-connection-label="account">Demo account</h3>'));
+      assert(/<div class="jdr-ninja__feature" role="group" aria-labelledby="jdr-ninja-service-atlas" data-feature="atlas" data-state="connected">/.test(html));
+      assert(html.includes("JDRNINJA.panel.summary.atlasWorld Demo world"));
+      assert.deepEqual(context.features.map(feature => feature.state), [context.features[0].state, "active", "available", "connected"]);
+      const advanced = html.indexOf('<details class="jdr-ninja__advanced" data-sync="advanced">');
+      assert(advanced > 0 && !/<details[^>]*\bopen\b/.test(html), "Advanced options start closed and keep their state across renders");
+      for (const hook of ['name="streamDeckEnabled"', 'name="overlayEnabled"', 'name="creaturesEnabled"', 'name="atlasEnabled"',
+        'data-action="pair"', 'data-action="disconnectAccount"', 'data-action="openAtlas"']) {
+        assert(html.indexOf(hook) > 0 && html.indexOf(hook) < advanced, hook);
+      }
+      // The device name, the manual token, the site addresses, the token of a connected world and device management are advanced.
+      for (const hook of ['name="deviceName"', 'name="accountToken"', 'name="accountOrigin"', 'name="atlasOrigin"', 'name="atlasToken"',
+        'data-action="saveAccount"', 'data-action="saveAtlas"', 'data-action="manageAccount"', 'data-action="manageAtlas"', 'data-action="disconnectAtlas"']) {
+        assert(html.indexOf(hook) > advanced, hook);
+      }
+      // Once everything is verified no check or authorization button is left.
+      for (const action of ["checkAccount", "checkAtlas", "checkCreatures", "pairCreatures"]) assert(!html.includes(`data-action="${action}"`), action);
+      assert(!html.includes("notice-error") && !html.includes('role="alert"'));
+      // The wait is a footer with the one way out, only while an operation runs.
+      assert(!html.includes('data-action="cancel"'));
+      assert(/<footer class="form-footer jn-footer jdr-ninja__busy" role="status">/.test(render({ ...context, busy: true })));
+      assert(html.includes('class="standard-form jn-layout') && html.includes('<div class="jn-scroll">'));
+      // A pairing that asks for the creature permission says so next to its code.
+      const challenge = { userCode: "ABCD", verificationUrl: "https://www.jdr.ninja/vtt-overlay/lier" };
+      const note = Handlebars.escapeExpression(copy["JDRNINJA.pairing.creatures"]);
+      const pairing = render({ ...context, challenge, pairingCreatures: true });
+      assert(pairing.includes(note) && pairing.includes('<strong class="jdr-ninja__code">ABCD</strong>'));
+      assert(!render({ ...context, challenge }).includes(note));
+    });
+  } finally { game.settings = savedSettings; creatureClient.access = savedAccess; leaveWorld(); }
+});
+
+test("pairing asks for the creature permission only for a GM who enabled the creatures", async () => {
+  keysAsText();
+  const savedSettings = game.settings, previousGM = game.user.isGM;
+  try {
+    for (const [isGM, creaturesEnabled, expected] of [[true, true, ["dnd-creatures"]], [true, false, []], [false, true, []], [false, false, []]]) {
+      game.settings = fixtureSettings({ creaturesEnabled });
+      game.user.isGM = isGM;
+      const panel = new ConnectionPanel();
+      const requests = [];
+      panel._connections.pairAccount = async options => {
+        requests.push(options.requestedCapabilities);
+        assert.equal((await panel._prepareContext()).pairingCreatures, expected.length > 0);
+        return { ok: false, reason: "denied" };
+      };
+      await panel._pair();
+      assert.deepEqual(requests, [expected], JSON.stringify([isGM, creaturesEnabled]));
+      // The failed attempt is reported without changing what is known of the saved token.
+      const context = await panel._prepareContext();
+      assert.deepEqual([context.account.state, context.account.error], ["unchecked", "JDRNINJA.error.denied"]);
+      await panel._pairCreatures();
+      assert.deepEqual(requests.slice(1), isGM ? [["dnd-creatures"]] : []);
+    }
+  } finally { game.settings = savedSettings; game.user.isGM = previousGM; }
+});
+
+test("automatic checks run once per opening in the background, and never without a saved token or a known creature access", async () => {
+  keysAsText();
+  const savedSettings = game.settings, savedAccess = creatureClient.access, savedCheck = creatureClient.check;
+  compatibleWorld();
+  const calls = [], release = {};
+  const pending = kind => new Promise(resolve => { release[kind] = resolve; });
+  creatureClient.check = signal => { calls.push(["creatures", signal]); return pending("creatures"); };
+  try {
+    game.settings = fixtureSettings({ atlasEnabled: true, creaturesEnabled: true, overlayEnabled: true });
+    creatureClient.access = null;
     const panel = new ConnectionPanel();
-    panel._results.account = { ok: true, label: "Demo account", allowed: true };
-    panel._results.atlas = { ok: true, label: "Demo world", allowed: true };
-    const context = await panel._prepareContext();
-    const html = render(context);
-    // The label of the account and of the Atlas world sits in the status line the tool waits for.
-    assert(/<span class="jdr-ninja__status" aria-live="polite"><strong>Demo account<\/strong><\/span>/.test(html));
-    assert(/<span class="jdr-ninja__status" aria-live="polite"><strong>Demo world<\/strong><\/span>/.test(html));
-    const advanced = html.indexOf('<details class="jdr-ninja__advanced" data-sync="advanced">');
-    assert(advanced > 0 && !/<details[^>]*\bopen\b/.test(html), "Advanced options start closed and keep their state across renders");
-    // What the first connection needs stays outside the closed disclosure.
-    for (const hook of ['name="streamDeckEnabled"', 'name="overlayEnabled"', 'name="creaturesEnabled"', 'name="atlasEnabled"', 'name="atlasToken"',
-      'name="deviceName"', 'data-action="pairCreatures"', 'data-action="checkCreatures"', 'data-action="saveAtlas"', 'data-action="pair"']) {
-      assert(html.indexOf(hook) > 0 && html.indexOf(hook) < advanced, hook);
+    panel._connections.check = (kind, { signal }) => { calls.push([kind, signal]); return pending(kind); };
+    const opening = await panel._prepareContext({ isFirstRender: true });
+    assert.deepEqual(calls.map(([kind]) => kind), ["account", "atlas", "creatures"]);
+    // The window stays usable: no busy footer, and only the checked blocks say so.
+    assert.equal(opening.busy, false);
+    assert.equal(opening.account.state, "checking");
+    assert.deepEqual(opening.features.slice(1).map(feature => feature.state), ["checking", "checking", "checking"]);
+    // Neither the next render nor another first-render call of the same window checks again.
+    panel.rendered = true;
+    await panel.render();
+    await panel._prepareContext({ isFirstRender: true });
+    assert.equal(calls.length, 3);
+    release.account({ ok: true, label: "Demo GM", allowed: true });
+    release.atlas({ ok: false, reason: "network" });
+    creatureClient.access = { allowed: true, entitled: true };
+    release.creatures({});
+    await flush();
+    const checked = panel.renders.at(-1);
+    assert.deepEqual([checked.account.state, ...checked.features.slice(1).map(feature => feature.state)], ["verified", "active", "available", "failed"]);
+    // A failure is never retried on its own.
+    await panel.render();
+    assert.equal(calls.length, 3);
+    await panel.close();
+
+    // Nothing is checked without a saved token, and a creature access the Actors directory already knows is reused.
+    calls.length = 0;
+    game.settings = fixtureSettings({ accountToken: "", atlasToken: "", atlasEnabled: true, creaturesEnabled: true });
+    const empty = new ConnectionPanel();
+    empty._connections.check = (kind, { signal }) => { calls.push([kind, signal]); return pending(kind); };
+    await empty._prepareContext({ isFirstRender: true });
+    assert.deepEqual(calls, []);
+    game.settings = fixtureSettings({ atlasEnabled: false, creaturesEnabled: true });
+    creatureClient.access = { allowed: false, entitled: true, reason: "devicePermissionRequired" };
+    const known = new ConnectionPanel();
+    known._connections.check = (kind, { signal }) => { calls.push([kind, signal]); return pending(kind); };
+    const context = await known._prepareContext({ isFirstRender: true });
+    assert.deepEqual(calls.map(([kind]) => kind), ["account"]);
+    assert.equal(context.features.find(feature => feature.id === "creatures").state, "devicePermissionRequired");
+    await known.close();
+  } finally { game.settings = savedSettings; creatureClient.access = savedAccess; creatureClient.check = savedCheck; leaveWorld(); }
+});
+
+test("closing aborts the automatic checks, an explicit operation replaces its own, and a late answer for another token is dropped", async () => {
+  keysAsText();
+  const savedSettings = game.settings, savedAccess = creatureClient.access, savedCheck = creatureClient.check;
+  compatibleWorld();
+  const calls = [], release = {};
+  const pending = kind => new Promise(resolve => { release[kind] = resolve; });
+  creatureClient.check = signal => { calls.push(["creatures", signal]); return pending("creatures"); };
+  try {
+    game.settings = fixtureSettings({ atlasEnabled: true, creaturesEnabled: true });
+    creatureClient.access = null;
+    const closing = new ConnectionPanel();
+    closing._connections.check = (kind, { signal }) => { calls.push([kind, signal]); return pending(kind); };
+    await closing._prepareContext({ isFirstRender: true });
+    closing.rendered = true;
+    await closing.close();
+    assert(calls.every(([, signal]) => signal.aborted));
+    const renders = closing.renders.length;
+    release.account({ ok: true, label: "Late", allowed: true });
+    release.atlas({ ok: true, label: "Late", allowed: true });
+    await flush();
+    assert.deepEqual([closing._results.account, closing._results.atlas, closing.renders.length], [null, null, renders]);
+
+    // A token saved while the check ran makes its answer describe nothing on screen.
+    calls.length = 0;
+    const values = { atlasEnabled: false, creaturesEnabled: false };
+    game.settings = fixtureSettings(values);
+    const stale = new ConnectionPanel();
+    stale._connections.check = (kind, { signal }) => { calls.push([kind, signal]); return pending(kind); };
+    await stale._prepareContext({ isFirstRender: true });
+    values.accountToken = "another-secret";
+    release.account({ ok: true, label: "Old account", allowed: true });
+    await flush();
+    assert.equal(stale._results.account, null);
+    assert.equal((await stale._prepareContext()).account.state, "unchecked");
+
+    // « Try again » starts an explicit check, which replaces the automatic one.
+    values.accountToken = "fixture-secret";
+    const explicit = new ConnectionPanel();
+    explicit._connections.check = (kind, { signal }) => { calls.push([kind, signal]); return pending(kind); };
+    await explicit._prepareContext({ isFirstRender: true });
+    const automatic = calls.at(-1)[1];
+    const retry = explicit._checkAccount();
+    await flush();
+    assert.equal(automatic.aborted, true);
+    assert.equal(explicit._checks.account, null);
+    assert.equal((await explicit._prepareContext()).busy, true);
+    release.account({ ok: true, label: "Demo GM", allowed: true });
+    await retry;
+    assert.equal((await explicit._prepareContext()).account.label, "Demo GM");
+  } finally { game.settings = savedSettings; creatureClient.access = savedAccess; creatureClient.check = savedCheck; leaveWorld(); }
+});
+
+test("creature access is checked when its switch turns on and after a pairing succeeds, only while it is unknown", async () => {
+  keysAsText();
+  const savedSettings = game.settings, savedAccess = creatureClient.access, savedCheck = creatureClient.check;
+  compatibleWorld();
+  let checks = 0;
+  creatureClient.check = () => { checks++; return new Promise(() => {}); };
+  try {
+    const values = { creaturesEnabled: false };
+    game.settings = fixtureSettings(values);
+    creatureClient.access = null;
+    const panel = new ConnectionPanel();
+    await panel._toggleCreatures({ currentTarget: { checked: true } });
+    assert.equal(values.creaturesEnabled, true);
+    assert.equal(checks, 1);
+    assert.equal((await panel._prepareContext()).features.find(feature => feature.id === "creatures").state, "checking");
+    await panel.close();
+
+    creatureClient.access = { allowed: true };
+    const known = new ConnectionPanel();
+    await known._toggleCreatures({ currentTarget: { checked: true } });
+    assert.equal(checks, 1);
+
+    creatureClient.access = null;
+    const paired = new ConnectionPanel();
+    paired._connections.pairAccount = async () => ({ ok: true, label: "Demo GM", allowed: true });
+    await paired._pair();
+    assert.equal(checks, 2);
+    assert.equal(paired._results.account.label, "Demo GM");
+    await paired.close();
+  } finally { game.settings = savedSettings; creatureClient.access = savedAccess; creatureClient.check = savedCheck; leaveWorld(); }
+});
+
+test("each disconnection asks first: cancelling or closing keeps the token, confirming removes it", async () => {
+  keysAsText();
+  const savedSettings = game.settings, savedDialog = foundry.applications.api.DialogV2;
+  const dialogs = [];
+  let answer = false;
+  foundry.applications.api.DialogV2 = { confirm: async config => { dialogs.push(config); return answer; } };
+  try {
+    const values = { accountToken: "fixture-secret", atlasToken: "fixture-secret" };
+    game.settings = fixtureSettings(values);
+    const panel = new ConnectionPanel();
+    for (const kind of ["account", "atlas"]) {
+      const disconnect = () => kind === "account" ? panel._disconnectAccount() : panel._disconnectAtlas();
+      answer = false; await disconnect();
+      answer = null; await disconnect();
+      assert.equal(values[`${kind}Token`], "fixture-secret", kind);
+      answer = true; await disconnect();
+      assert.equal(values[`${kind}Token`], "", kind);
     }
-    // The manual token, the site addresses and device management are advanced.
-    for (const hook of ['name="accountToken"', 'name="accountOrigin"', 'name="atlasOrigin"', 'data-action="saveAccount"',
-      'data-action="manageAccount"', 'data-action="manageAtlas"']) {
-      assert(html.indexOf(hook) > advanced, hook);
+    assert.equal(dialogs.length, 6);
+    const [account, atlas] = [dialogs[0], dialogs[3]];
+    assert.equal(account.window.title, "JDRNINJA.account.disconnectTitle");
+    assert.equal(atlas.window.title, "JDRNINJA.atlas.disconnectTitle");
+    assert(account.content.includes("<p>JDRNINJA.account.disconnectHint</p>"));
+    assert(atlas.content.includes("<p>JDRNINJA.atlas.disconnectHint</p><p>JDRNINJA.atlas.disconnectWorld</p>"));
+    assert(account.content.includes('<a href="https://www.jdr.ninja/vtt-overlay/foundry" target="_blank" rel="noopener noreferrer">JDRNINJA.account.manage</a>'));
+    assert(atlas.content.includes('<a href="https://www.jdr.ninja/dojo/connexions-foundry" target="_blank" rel="noopener noreferrer">JDRNINJA.atlas.manage</a>'));
+    for (const dialog of [account, atlas]) {
+      assert.deepEqual([dialog.yes.label, dialog.yes.class, dialog.no.label, dialog.modal], ["JDRNINJA.button.disconnect", "jn-danger", "JDRNINJA.button.cancel", true]);
+      assert(dialog.classes.includes("jdr-ninja"));
     }
-    // The wait is a footer with the one way out, only while an operation runs.
-    assert(!html.includes('data-action="cancel"'));
-    assert(/<footer class="form-footer jn-footer jdr-ninja__busy" role="status">/.test(render({ ...context, busy: true })));
-    assert(html.includes('class="standard-form jn-layout') && html.includes('<div class="jn-scroll">'));
-  });
+    // An address that is not a valid origin leaves the link out instead of failing.
+    values.accountToken = "fixture-secret"; values.accountOrigin = "javascript:alert(1)";
+    answer = false;
+    await panel._disconnectAccount();
+    assert(!dialogs.at(-1).content.includes("<a"));
+    assert.equal(values.accountToken, "fixture-secret");
+  } finally { game.settings = savedSettings; foundry.applications.api.DialogV2 = savedDialog; }
+});
+
+test("a redraw keeps what is being typed, while an explicit operation starts from the saved state", () => {
+  const panel = new ConnectionPanel();
+  const field = (name, value, defaultValue = value) => ({ name, value, defaultValue });
+  const rendered = () => [field("atlasToken", ""), field("deviceName", "Test world / GM"), field("atlasOrigin", "https://new.example")];
+  const content = { fields: [field("atlasToken", "typed", ""), field("deviceName", "My table", "Test world / GM"), field("atlasOrigin", "https://www.jdr.ninja")],
+    querySelectorAll: () => content.fields, querySelector: selector => content.fields.find(input => selector === `input[name="${input.name}"]`) };
+  panel._replaceHTML(rendered(), content, {});
+  // An untouched field shows the newly saved value.
+  assert.deepEqual(content.fields.map(input => input.value), ["typed", "My table", "https://new.example"]);
+  content.fields[0].value = "typed again";
+  panel._replaceHTML(rendered(), content, { resetFields: true });
+  assert.deepEqual(content.fields.map(input => input.value), ["", "Test world / GM", "https://new.example"]);
 });
