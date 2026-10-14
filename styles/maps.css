@@ -1,0 +1,28 @@
+/* Map import window. Shared components (layout, sections, cards, pills, toolbar, footer) live in module.css. */
+
+.jdr-ninja .jn-maps-intro { margin: 0; }
+.jdr-ninja .jn-maps p.notice { margin: 0; }
+.jdr-ninja .jn-maps .form-group > .hint { margin: 0; }
+/* An invalid folder is outlined, and the hint under the field says what is allowed, so the colour is never alone. */
+.jdr-ninja .jn-maps [aria-invalid="true"] { outline: 2px solid var(--color-level-error); outline-offset: -1px; }
+
+/* The archive's summary: the map's name, its file, then one line per kind of content. */
+.jdr-ninja .jn-maps-summary { overflow-wrap: anywhere; }
+.jdr-ninja .jn-maps-title { display: flex; flex-direction: column; gap: 0.15rem; padding-block-end: 0.5rem; border-block-end: 1px solid var(--jn-line); }
+.jdr-ninja .jn-maps-title h3 { margin: 0; padding: 0; border: none; font-size: var(--font-size-20, 1.25rem); line-height: 1.2;
+  color: var(--color-text-emphatic, var(--color-text-primary)); }
+.jdr-ninja .jn-maps-title p { margin: 0; font-size: var(--font-size-12, 0.8rem); }
+.jdr-ninja .jn-maps-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.5rem 1rem; margin: 0; }
+.jdr-ninja .jn-maps-counts > div { display: flex; flex-direction: column; min-width: 0; }
+.jdr-ninja .jn-maps-counts dt { color: var(--color-text-secondary); font-size: var(--font-size-12, 0.8rem); }
+.jdr-ninja .jn-maps-counts dd { margin: 0; font-weight: 600; color: var(--color-text-primary); }
+
+.jdr-ninja .jn-maps-done { align-items: flex-start; }
+.jdr-ninja .jn-maps-done p { margin: 0; overflow-wrap: anywhere; }
+
+.jdr-ninja .jn-maps-progress { display: flex; flex-direction: column; gap: 0.25rem; }
+.jdr-ninja .jn-maps-progress progress { width: 100%; }
+.jdr-ninja .jn-maps-progress p { margin: 0; overflow-wrap: anywhere; }
+
+/* Paths already uploaded when an import stops halfway. */
+.jdr-ninja .jn-maps-files { margin: 0.25rem 0 0; padding-inline-start: 1.25rem; font-size: var(--font-size-12, 0.8rem); overflow-wrap: anywhere; }

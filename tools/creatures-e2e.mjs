@@ -85,6 +85,20 @@ async function mockApi(request, response) {
   if (mock.mode === "pending") { mock.pending = () => send(result); return; }
   send(result);
 }
+// Foundry 14.369 replaced the join form's `username` text field with a `userId` select; both are handled.
+const submitJoin = async (seat, name) => {
+  await seat.locator('#join-game-form [name="username"], #join-game-form [name="userId"]').first().waitFor();
+  await seat.evaluate(user => {
+    const form = document.getElementById("join-game-form"), { username, userId, password } = form.elements;
+    if (userId) {
+      const option = [...userId.options].find(entry => entry.textContent.trim() === user);
+      if (!option) throw new Error(`No user named ${user} on the join form`);
+      userId.value = option.value;
+    } else username.value = user;
+    password.value = "";
+    form.querySelector('button[type="submit"]').click();
+  }, name);
+};
 async function check(name, action) {
   console.log(`Checking ${name}`);
   const row = { name }; report.cases.push(row);
@@ -113,30 +127,40 @@ try {
   page = await context.newPage(); page.setDefaultTimeout(15000);
   const runtimeErrors = []; page.on("pageerror", error => runtimeErrors.push(error.message));
   await page.goto(`${origin}/join`);
-  await page.locator('#join-game-form [name="username"]').waitFor();
-  await page.evaluate(() => { const form = document.getElementById("join-game-form"); form.elements.username.value = "Gamemaster"; form.elements.password.value = ""; form.querySelector('button[type="submit"]').click(); });
+  await submitJoin(page, "Gamemaster");
   await page.waitForFunction(() => globalThis.game?.ready === true, null, { timeout: 45000 });
   await page.evaluate(async () => { await game.settings.set("core", "moduleConfiguration", { "jdr-ninja": true }); });
   await page.reload();
   await page.waitForFunction(() => globalThis.game?.ready && game.modules.get("jdr-ninja")?.api?.openNpcGenerator, null, { timeout: 45000 });
   const apiOrigin = `http://localhost:${server.address().port}`;
-  await check("explicit creature pairing requests permission without enabling integrations", async () => {
+  await check("account pairing asks for no creature permission until creatures are enabled, then the explicit authorization requests it", async () => {
     await page.evaluate(() => game.modules.get("jdr-ninja").api.openConnections());
     const connections = page.locator("#jdr-ninja-connections");
     await connections.waitFor();
     // A browser without an account keeps one subscription link, in the account section only.
     assert.equal(await connections.locator('[data-jdr-subscriptions]').count(), 1);
     assert.equal(await connections.locator('[data-jdr-subscriptions="account"]').getAttribute('href'), 'https://www.jdr.ninja/abonnements');
-    const compatibility = connections.locator('[data-compatibility="compatible"]');
-    assert.equal(await compatibility.count(), 1);
-    assert((await compatibility.innerText()).includes('5.3.3'));
+    // The creatures row carries the local compatibility; the system and its version are shown in the generator windows.
+    assert.equal(await connections.locator('[data-feature="creatures"][data-compatibility="compatible"]').count(), 1);
+    // The authorization button exists only while an enabled service lacks the device permission.
+    assert.equal(await connections.locator('[data-action="pairCreatures"]').count(), 0);
     await connections.locator('input[name="accountOrigin"]').evaluate((element, value) => { element.value = value; }, apiOrigin);
-    await connections.locator('[data-action="pairCreatures"]').click();
+    await connections.locator('[data-action="pair"]').click();
     await page.waitForFunction(() => Boolean(game.settings.get("jdr-ninja", "accountToken")));
-    assert.deepEqual(mock.calls.find(call => call.path.endsWith("authorize")).requestedCapabilities, ["dnd-creatures"]);
+    // The request carries `requestedCapabilities` only when it asks for one.
+    assert.deepEqual(mock.calls.filter(call => call.path.endsWith("authorize")).map(call => call.requestedCapabilities), [undefined]);
     assert.equal(await page.evaluate(() => game.settings.get("jdr-ninja", "creaturesEnabled")), false);
-    await page.waitForFunction(() => !document.querySelector('#jdr-ninja-connections [data-action="pairCreatures"]').disabled);
+    // Enabling the service is the GM's own choice; the server then reports the permission missing.
+    mock.mode = "ungranted";
     await connections.locator('[name="creaturesEnabled"]').check();
+    const row = connections.locator('[data-feature="creatures"]');
+    await row.locator('[data-action="pairCreatures"]:not([disabled])').waitFor();
+    assert.equal(await row.getAttribute("data-state"), "devicePermissionRequired");
+    mock.mode = "available";
+    await row.locator('[data-action="pairCreatures"]').click();
+    await connections.locator('[data-feature="creatures"][data-state="available"]').waitFor();
+    assert.deepEqual(mock.calls.filter(call => call.path.endsWith("authorize")).map(call => call.requestedCapabilities), [undefined, ["dnd-creatures"]]);
+    assert.equal(await page.evaluate(() => game.settings.get("jdr-ninja", "creaturesEnabled")), true);
     await page.evaluate(async () => { await foundry.applications.instances.get("jdr-ninja-connections").close(); });
   });
   const open = async kind => {
@@ -151,7 +175,10 @@ try {
     assert(!mock.calls.some(call => call.path.endsWith("generate")));
     assert.equal(await page.locator('#jdr-ninja-npcs details[data-creature-advanced]').count(), 1);
     assert.equal(await page.locator('#jdr-ninja-npcs [name="includeSecret"]').count(), 1);
-    for (const kind of ['monsters', 'npcs']) assert.equal(await page.locator(`#jdr-ninja-${kind} [data-compatibility="compatible"]`).count(), 1);
+    for (const kind of ['monsters', 'npcs']) {
+      assert.equal(await page.locator(`#jdr-ninja-${kind} [data-compatibility="compatible"]`).count(), 1);
+      assert((await page.locator(`#jdr-ninja-${kind} .jn-creature-system`).innerText()).includes('5.3.3'));
+    }
   });
   for (const kind of ["monster", "npc"]) await check(`${kind}: generate, sanitized preview and one native actor with shared-resource references`, async () => {
     const window = await open(kind);
@@ -245,9 +272,7 @@ try {
     try {
       const player = await playerContext.newPage(); player.on("pageerror", error => runtimeErrors.push(error.message));
       await player.goto(`${origin}/join`);
-      await player.locator('#join-game-form [name="username"]').waitFor();
-      await player.evaluate(name => { const form = document.getElementById("join-game-form"); form.elements.username.value = name;
-        form.elements.password.value = ""; form.querySelector('button[type="submit"]').click(); }, user);
+      await submitJoin(player, user);
       await player.waitForFunction(() => globalThis.game?.ready === true, null, { timeout: 45000 });
       const evidence = await player.evaluate(async () => {
         const actor = game.actors.getName("Creature acceptance npc"); await actor.sheet.render({ force: true });

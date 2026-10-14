@@ -3,7 +3,10 @@ import { readFile, readdir, access } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MODULE_ID, I18N } from "../scripts/constants.js";
-import { releaseManifest } from "./release-manifest.mjs";
+import { PACKAGED_ASSETS, releaseManifest } from "./release-manifest.mjs";
+import { noticeProblems } from "./third-party-notices.mjs";
+import { MAP_ERROR_CODES } from "../scripts/maps/errors.js";
+import { DEFAULT_NAMES } from "../scripts/maps/translate.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = JSON.parse(await readFile(join(root, "module.json"), "utf8"));
@@ -45,6 +48,7 @@ for (const source of [...await sources(join(root, "scripts")), ...await sources(
   }
   for (const match of source.matchAll(/text\("([\w.]+)"\)/g)) assert(keys.includes(`${I18N}.${match[1]}`));
   for (const match of source.matchAll(/VT\("([\w.]+)"\)/g)) assert(keys.includes(`${I18N}.variables.${match[1]}`));
+  for (const match of source.matchAll(/MT\("([\w.]+)"/g)) assert(keys.includes(`${I18N}.maps.${match[1]}`), match[1]);
   const prefix = source.includes("${I18N}.overlay.") ? `${I18N}.overlay` : "JDRNINJA_ATLAS_SYNC";
   for (const match of source.matchAll(/(?:L|Fmt)\("([\w.]+)"/g)) assert(keys.includes(`${prefix}.${match[1]}`), match[1]);
   assert(!/(?<![.\w])(?:(?:window|globalThis)\.)?(?:alert|confirm|prompt)\s*\(/.test(source), "Native browser dialog");
@@ -53,4 +57,11 @@ for (const reason of ["invalidOrigin", "invalidToken", "originChanged", "invalid
   "rateLimited", "server", "network", "cancelled", "denied", "expired", "notGM", "saveFailed"]) {
   assert(keys.includes(`${I18N}.error.${reason}`), `Missing error: ${reason}`);
 }
+// The map import window reads its error messages and region names by code, so no source scan sees them.
+for (const code of MAP_ERROR_CODES) assert(keys.includes(`${I18N}.maps.error.${code}`), `Missing map error: ${code}`);
+for (const name of Object.keys(DEFAULT_NAMES)) assert(keys.includes(`${I18N}.maps.region.${name}`), `Missing map region name: ${name}`);
+// The bundle inlines fflate and drops its legal comments: the package ships its notice, which has to name the
+// installed version and carry the licence text.
+for (const asset of PACKAGED_ASSETS) await access(join(root, asset));
+assert.deepEqual(await noticeProblems(root), [], "Third-party notices");
 console.log(`Manifest and ${manifest.languages.length} locales checked (${keys.length} keys each).`);

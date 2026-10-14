@@ -1,5 +1,11 @@
 export const REPOSITORY = "JDR-Ninja/fvtt-jdr-ninja";
 
+/**
+ * What the package carries besides the bundled `scripts/main.js` and the release `module.json`: copied as they are.
+ * The licence of the module and the notices of the third-party software the bundle inlines travel with it.
+ */
+export const PACKAGED_ASSETS = Object.freeze(["styles", "templates", "lang", "README.md", "LICENSE", "THIRD-PARTY-NOTICES.md"]);
+
 export function releaseManifest(manifest, packageMetadata, tag = `v${manifest.version}`) {
   if (manifest.id !== "jdr-ninja") throw new Error("Foundry package id must remain jdr-ninja.");
   // Stable SemVer or a prerelease with nonempty, valid identifiers.

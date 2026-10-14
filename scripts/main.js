@@ -14,6 +14,8 @@ import { VariableActions } from "./variables/dispatcher.js";
 import { uuid7 } from "./variables/schema.js";
 import { registerCreatureIntegration, refreshCreatures } from "./creatures/integration.js";
 import { MonsterGeneratorPanel, NpcGeneratorPanel } from "./creatures/panel.js";
+import { registerMapIntegration } from "./maps/integration.js";
+import { MapImportPanel } from "./maps/panel.js";
 import { registerLegacyMigrationSetting, checkLegacyMigration } from "./atlas/legacy-migration.js";
 
 Hooks.once("init", () => {
@@ -51,6 +53,7 @@ Hooks.once("init", () => {
   registerLegacyMigrationSetting();
   registerAtlasIntegration();
   registerCreatureIntegration();
+  registerMapIntegration();
   overlayRelay.registerHooks();
   streamDeckBridge.registerHooks();
 });
@@ -66,6 +69,7 @@ Hooks.once("ready", () => {
     openAtlasSync() { return AtlasSyncApp.open(); },
     openMonsterGenerator() { return MonsterGeneratorPanel.open(); },
     openNpcGenerator() { return NpcGeneratorPanel.open(); },
+    openMapImport() { return MapImportPanel.open(); },
     openOverlay() { return OverlayPanel.open(); },
     openStreamDeck() { return StreamDeckPanel.open(); },
     openVariables() { return VariablePanel.open(); },

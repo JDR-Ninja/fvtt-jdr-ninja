@@ -5,8 +5,8 @@
 An extension of the [JDR Ninja website](https://www.jdr.ninja), this module brings
 the site's features directly into **Foundry VTT V14**.
 
-Stream Deck control, Atlas character sync, live dice overlays, and procedural D&D
-creature generation in one module.
+Stream Deck control, Atlas character sync, live dice overlays, procedural D&D
+creature generation, and multi-level map import in one module.
 
 ## Stream Deck: control Foundry with a button
 
@@ -65,6 +65,27 @@ GM-only, with premium access. Requires **Foundry V14 and D&D5e 5.3.3**.
 ![The generated monster imported as a native D&D5e actor sheet](docs/images/monster-sheet.png)
 
 [Connect the generators →](https://www.jdr.ninja/en/integration-foundry/guide#activer-les-fonctions)
+
+## Maps: import a JDR Ninja map as a multi-level scene
+
+Export a map from the **JDR Ninja map generator** as a Foundry ZIP, then import it
+here. The file becomes **one scene with one level per floor**: the level images,
+walls, doors and secret doors, windows and railings,
+**stairs, ladders and lifts that offer the level change**, water, ice and tight
+squeezes that slow movement, and drops that take a token down a floor.
+
+1. In Foundry, open the **Scenes** tab and click **Import a JDR Ninja map**, or run
+   `game.modules.get("jdr-ninja").api.openMapImport()`.
+2. Choose the ZIP file. The window lists what it holds.
+3. Check the destination folder, where the level images are uploaded in your
+   Foundry data, and click **Import the map**.
+
+GM-only, and your role needs the permissions to upload files and to use the file
+browser. Importing a file **needs no JDR Ninja account connection**. Requires
+**Foundry V14**. The images are never given the name of a file already in the
+destination folder, so an earlier import is never overwritten. The scene is made of
+native Foundry levels, walls and regions, so it keeps working if you disable the
+module.
 
 ## Advanced controls: make your buttons go further
 

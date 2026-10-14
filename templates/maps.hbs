@@ -1,0 +1,72 @@
+<div class="standard-form jn-layout jn-maps">
+  <div class="jn-scroll">
+    <p class="jn-muted jn-maps-intro">{{localize "JDRNINJA.maps.intro"}}</p>
+    {{#if permissionMessage}}<p class="notice notice-warning" role="alert"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{permissionMessage}}</p>{{/if}}
+    {{#if failure}}
+      <div class="notice notice-error" role="alert">
+        <p><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> {{failure.message}}</p>
+        {{#if failure.uploaded.length}}
+          <p>{{localize "JDRNINJA.maps.uploaded"}}</p>
+          <ul class="jn-maps-files">{{#each failure.uploaded}}<li>{{this}}</li>{{/each}}</ul>
+        {{/if}}
+      </div>
+    {{/if}}
+    {{#each warnings}}<p class="notice notice-warning" role="status"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{this}}</p>{{/each}}
+
+    {{#if isDone}}
+      <section class="jn-section jn-maps-done" aria-live="polite">
+        <span class="jn-pill jn-pill--success" role="status"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> {{localize "JDRNINJA.maps.done"}}</span>
+        <p>{{localize "JDRNINJA.maps.doneText"}} <strong>{{sceneName}}</strong></p>
+      </section>
+    {{else if hasArchive}}
+      <article class="jn-card jn-maps-summary" aria-labelledby="jn-maps-name">
+        <header class="jn-maps-title">
+          <h3 id="jn-maps-name">{{mapName}}</h3>
+          <p class="jn-muted">{{fileName}}</p>
+        </header>
+        <dl class="jn-maps-counts">
+          {{#each rows}}<div><dt>{{label}}</dt><dd>{{value}}</dd></div>{{/each}}
+        </dl>
+        <div class="jn-toolbar">
+          <button type="button" data-action="clear" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-file-zipper" aria-hidden="true"></i> {{localize "JDRNINJA.maps.chooseAnother"}}</button>
+        </div>
+      </article>
+      <section class="jn-section" aria-labelledby="jn-maps-destination">
+        <h3 class="jn-section__title" id="jn-maps-destination"><i class="fa-solid fa-folder-open" aria-hidden="true"></i> {{localize "JDRNINJA.maps.destination"}}</h3>
+        <div class="form-group">
+          <label for="jn-maps-folder">{{localize "JDRNINJA.maps.folder"}}</label>
+          <div class="form-fields">
+            <input id="jn-maps-folder" name="folder" type="text" value="{{folder}}" maxlength="200" spellcheck="false" autocomplete="off"
+                   aria-invalid="{{folderInvalid}}" aria-describedby="jn-maps-folder-hint" {{#if busy}}disabled{{/if}}>
+          </div>
+          <p class="hint" id="jn-maps-folder-hint">{{localize "JDRNINJA.maps.folderHint"}}</p>
+        </div>
+      </section>
+    {{else}}
+      <section class="jn-section">
+        <div class="form-group">
+          <label for="jn-maps-archive">{{localize "JDRNINJA.maps.file"}}</label>
+          <div class="form-fields">
+            <input id="jn-maps-archive" name="archive" type="file" accept=".zip,application/zip" aria-describedby="jn-maps-archive-hint" {{#if locked}}disabled{{/if}}>
+          </div>
+          <p class="hint" id="jn-maps-archive-hint">{{localize "JDRNINJA.maps.fileHint"}}</p>
+        </div>
+      </section>
+    {{/if}}
+
+    {{#if progress}}
+      <div class="jn-maps-progress" role="status" aria-live="polite">
+        <progress max="{{progress.max}}" value="{{progress.value}}"></progress>
+        <p>{{progress.text}}</p>
+      </div>
+    {{/if}}
+  </div>
+  <footer class="form-footer jn-footer">
+    {{#if isDone}}
+      <button type="button" class="bright" data-action="view"><i class="fa-solid fa-eye" aria-hidden="true"></i> {{localize "JDRNINJA.maps.view"}}</button>
+      <button type="button" data-action="another"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> {{localize "JDRNINJA.maps.another"}}</button>
+    {{else}}
+      <button type="button" class="bright" data-action="import" {{#unless canImport}}disabled{{/unless}}><i class="fa-solid fa-file-import" aria-hidden="true"></i> {{localize "JDRNINJA.maps.import"}}</button>
+    {{/if}}
+  </footer>
+</div>

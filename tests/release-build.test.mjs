@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { releaseManifest } from "../tools/release-manifest.mjs";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { PACKAGED_ASSETS, releaseManifest } from "../tools/release-manifest.mjs";
+import { NOTICES_FILE, noticeProblems } from "../tools/third-party-notices.mjs";
 
 const manifest = { id: "jdr-ninja", version: "0.1.0", compatibility: { minimum: "14" }, esmodules: ["scripts/main.js"] };
 const metadata = { version: "0.1.0" };
@@ -29,4 +34,40 @@ test("release refuses inconsistent versions, tags, identities, and invalid versi
   for (const version of ["latest", "01.1.0", "1.0", "1.0.0-01", "1.0.0-beta..1"]) {
     assert.throws(() => releaseManifest({ ...manifest, version }, { version }), /Invalid module version/);
   }
+});
+
+/* ------------------------- third-party notices of the package ------------------------- */
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+test("the package carries the licence of the module and the notices of what the bundle inlines", async () => {
+  for (const asset of ["LICENSE", "THIRD-PARTY-NOTICES.md", "README.md"]) assert(PACKAGED_ASSETS.includes(asset), asset);
+  for (const asset of PACKAGED_ASSETS) await access(join(root, asset));
+  // The bundle drops every legal comment, so the notices are the only place the licence of fflate (MIT) travels.
+  assert.deepEqual(await noticeProblems(root), []);
+  const notices = await readFile(join(root, NOTICES_FILE), "utf8");
+  assert(/fflate \d+\.\d+\.\d+/.test(notices) && /MIT License/.test(notices) && /Permission is hereby granted/.test(notices));
+});
+
+test("the notices check names a dependency, its installed version and its licence text, and notices what is missing or altered", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "jdr-notices-"));
+  try {
+    const write = async (path, content) => { await mkdir(dirname(join(directory, path)), { recursive: true }); await writeFile(join(directory, path), content); };
+    const licence = "MIT License\n\nCopyright (c) 2026 Someone\n\nPermission is hereby granted, free of charge.\n";
+    await write("package.json", JSON.stringify({ dependencies: { lib: "^1.0.0" } }));
+    assert.deepEqual(await noticeProblems(directory), [`${NOTICES_FILE} is missing`]);
+    await write(NOTICES_FILE, "# Third-party notices\n");
+    assert.deepEqual(await noticeProblems(directory), ["lib is not installed (run npm ci)"]);
+    await write("node_modules/lib/package.json", JSON.stringify({ name: "lib", version: "1.2.3" }));
+    assert.deepEqual(await noticeProblems(directory), [`${NOTICES_FILE} does not name lib 1.2.3`, "lib 1.2.3 publishes no licence file to reproduce"]);
+    await write("node_modules/lib/LICENSE", licence);
+    assert.deepEqual(await noticeProblems(directory), [`${NOTICES_FILE} does not name lib 1.2.3`, `${NOTICES_FILE} does not carry the licence text of lib 1.2.3`]);
+    // Line breaks and indentation do not matter, the words do.
+    await write(NOTICES_FILE, `## lib 1.2.3\n\n${licence.replace(/\n/g, "\r\n  ")}`);
+    assert.deepEqual(await noticeProblems(directory), []);
+    await write(NOTICES_FILE, `## lib 1.2.3\n\n${licence.replace("free of charge", "for a fee")}`);
+    assert.deepEqual(await noticeProblems(directory), [`${NOTICES_FILE} does not carry the licence text of lib 1.2.3`]);
+    await write(NOTICES_FILE, `## lib 1.2.2\n\n${licence}`);
+    assert.deepEqual(await noticeProblems(directory), [`${NOTICES_FILE} does not name lib 1.2.3`], "a dependency upgrade needs its notice updated");
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
