@@ -134,6 +134,8 @@
   "JDRNINJA.atlas.enable": "Attivare la sincronizzazione Atlas",
   "JDRNINJA.atlas.enableHint": "Questa opzione si applica a tutti i master di questo mondo Foundry. La deselezioni per disattivare la sincronizzazione.",
   "JDRNINJA.atlas.openSync": "Aprire la sincronizzazione Atlas",
+  "JDRNINJA.atlas.migrationImported": "Il token e la campagna scelta nel vecchio modulo Atlas Character Sync sono stati ripresi. I personaggi già collegati restano collegati.",
+  "JDRNINJA.atlas.migrationEnable": "Per sincronizzare i suoi personaggi, attivi la sincronizzazione Atlas nelle impostazioni di JDR Ninja.",
   "JDRNINJA_ATLAS_SYNC.status.INTEGRATION_DISABLED": "La sincronizzazione Atlas è disattivata.",
   "JDRNINJA_ATLAS_SYNC.status.LEGACY_MODULE_ACTIVE": "Atlas Character Sync è ancora attivo. Lo disattivi per utilizzare l'integrazione JDR Ninja.",
   "JDRNINJA_ATLAS_SYNC.status.GM_REQUIRED": "Solo un master può sincronizzare i personaggi con Atlas.",

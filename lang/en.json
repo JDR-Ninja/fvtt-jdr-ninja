@@ -134,6 +134,8 @@
   "JDRNINJA.atlas.enable": "Enable Atlas sync",
   "JDRNINJA.atlas.enableHint": "This setting applies to all GMs in this Foundry world. Uncheck it to disable sync.",
   "JDRNINJA.atlas.openSync": "Open Atlas sync",
+  "JDRNINJA.atlas.migrationImported": "The token and the campaign selected in the old Atlas Character Sync module were carried over. Characters already linked stay linked.",
+  "JDRNINJA.atlas.migrationEnable": "To sync your characters, enable Atlas sync in the JDR Ninja settings.",
   "JDRNINJA_ATLAS_SYNC.status.INTEGRATION_DISABLED": "Atlas sync is disabled.",
   "JDRNINJA_ATLAS_SYNC.status.LEGACY_MODULE_ACTIVE": "Atlas Character Sync is still enabled. Disable it to use the JDR Ninja integration.",
   "JDRNINJA_ATLAS_SYNC.status.GM_REQUIRED": "Only a GM can sync characters to Atlas.",

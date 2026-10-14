@@ -14,6 +14,7 @@ import { VariableActions } from "./variables/dispatcher.js";
 import { uuid7 } from "./variables/schema.js";
 import { registerCreatureIntegration, refreshCreatures } from "./creatures/integration.js";
 import { MonsterGeneratorPanel, NpcGeneratorPanel } from "./creatures/panel.js";
+import { registerLegacyMigrationSetting, checkLegacyMigration } from "./atlas/legacy-migration.js";
 
 Hooks.once("init", () => {
   registerSettings({
@@ -47,6 +48,7 @@ Hooks.once("init", () => {
     },
     onCreaturesChange: () => { refreshCreatures(); ConnectionPanel.refreshAll(); },
   });
+  registerLegacyMigrationSetting();
   registerAtlasIntegration();
   registerCreatureIntegration();
   overlayRelay.registerHooks();
@@ -57,6 +59,7 @@ Hooks.once("ready", () => {
   overlayRelay.schedulePoll();
   streamDeckBridge.refresh();
   void variableService.initialize().catch(error => ui.notifications.warn(variableError(error)));
+  void checkLegacyMigration().catch(error => console.error(`${MODULE_ID} | Atlas migration check failed`, error));
   const actions = new VariableActions();
   module.api = Object.freeze({
     openConnections() { return ConnectionPanel.open(); },
