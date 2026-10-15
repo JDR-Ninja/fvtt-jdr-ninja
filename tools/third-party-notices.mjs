@@ -16,13 +16,15 @@ async function licenceOf(directory) {
 /**
  * What is wrong with the third-party notices of a module folder. The release bundle inlines every runtime dependency
  * (`dependencies` of package.json) and drops its legal comments, so the package must carry, for each one, its name and
- * installed version and the text of its licence as the package publishes it. Whitespace is not compared.
+ * installed version and the text of its licence as the package publishes it. Whitespace is not compared. The module has
+ * no runtime dependency today and then needs no notices file; adding one makes this demand it.
  *
  * @param {string} root  The module folder, with its dependencies installed.
  * @returns {Promise<string[]>}  One message per problem; empty when the notices are complete.
  */
 export async function noticeProblems(root) {
   const metadata = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+  if (!Object.keys(metadata.dependencies ?? {}).length) return [];
   let notice;
   try { notice = squash(await readFile(join(root, NOTICES_FILE), "utf8")); }
   catch (error) { if (error.code === "ENOENT") return [`${NOTICES_FILE} is missing`]; throw error; }

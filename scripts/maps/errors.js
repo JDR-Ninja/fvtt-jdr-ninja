@@ -3,7 +3,7 @@
  * MapError fill its placeholders (`{file}`, `{level}`, `{detail}`, `{name}`, `{folder}`, `{version}`).
  */
 export const MAP_ERROR_CODES = Object.freeze([
-  "notGM", "noUpload", "noBrowse", "busy", "noFile", "readerUnavailable", "notZip", "tooLarge", "tooManyEntries", "unsafeName",
+  "notGM", "noUpload", "noBrowse", "busy", "noFile", "notZip", "tooLarge", "tooManyEntries", "unsafeName",
   "missingDescription", "badDescription", "unsupportedFormat", "unsupportedVersion", "missingImage", "badImage",
   "invalidFolder", "folderFailed", "folderUnreadable", "uploadFailed", "sceneFailed", "unknown",
 ]);

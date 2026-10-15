@@ -4,7 +4,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PACKAGED_ASSETS, releaseManifest } from "../tools/release-manifest.mjs";
+import { PACKAGED_ASSETS, packagedAssets, releaseManifest } from "../tools/release-manifest.mjs";
 import { NOTICES_FILE, noticeProblems } from "../tools/third-party-notices.mjs";
 
 const manifest = { id: "jdr-ninja", version: "0.1.0", compatibility: { minimum: "14" }, esmodules: ["scripts/main.js"] };
@@ -40,13 +40,20 @@ test("release refuses inconsistent versions, tags, identities, and invalid versi
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-test("the package carries the licence of the module and the notices of what the bundle inlines", async () => {
-  for (const asset of ["LICENSE", "THIRD-PARTY-NOTICES.md", "README.md"]) assert(PACKAGED_ASSETS.includes(asset), asset);
-  for (const asset of PACKAGED_ASSETS) await access(join(root, asset));
-  // The bundle drops every legal comment, so the notices are the only place the licence of fflate (MIT) travels.
+test("the package carries the licence of the module, and no notices file while the module has no runtime dependency", async () => {
+  const metadata = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+  assert.deepEqual(metadata.dependencies ?? {}, {}, "everything the bundle inlines is the module's own code");
+  for (const asset of ["LICENSE", "README.md"]) assert(PACKAGED_ASSETS.includes(asset), asset);
+  assert(!PACKAGED_ASSETS.includes(NOTICES_FILE));
+  assert.deepEqual(packagedAssets(metadata), [...PACKAGED_ASSETS]);
+  for (const asset of packagedAssets(metadata)) await access(join(root, asset));
   assert.deepEqual(await noticeProblems(root), []);
-  const notices = await readFile(join(root, NOTICES_FILE), "utf8");
-  assert(/fflate \d+\.\d+\.\d+/.test(notices) && /MIT License/.test(notices) && /Permission is hereby granted/.test(notices));
+});
+
+test("a runtime dependency is a package asset of its own: the notices file travels with the module", () => {
+  assert.deepEqual(packagedAssets({ dependencies: { lib: "^1.0.0" } }), [...PACKAGED_ASSETS, NOTICES_FILE]);
+  assert.deepEqual(packagedAssets({ dependencies: {} }), [...PACKAGED_ASSETS]);
+  assert.deepEqual(packagedAssets({}), [...PACKAGED_ASSETS]);
 });
 
 test("the notices check names a dependency, its installed version and its licence text, and notices what is missing or altered", async () => {
@@ -54,6 +61,12 @@ test("the notices check names a dependency, its installed version and its licenc
   try {
     const write = async (path, content) => { await mkdir(dirname(join(directory, path)), { recursive: true }); await writeFile(join(directory, path), content); };
     const licence = "MIT License\n\nCopyright (c) 2026 Someone\n\nPermission is hereby granted, free of charge.\n";
+    // No runtime dependency, nothing to give notice of: no notices file is needed.
+    await write("package.json", JSON.stringify({ devDependencies: { tool: "^1.0.0" } }));
+    assert.deepEqual(await noticeProblems(directory), []);
+    await write("package.json", JSON.stringify({ dependencies: {} }));
+    assert.deepEqual(await noticeProblems(directory), []);
+    // The first runtime dependency demands the file.
     await write("package.json", JSON.stringify({ dependencies: { lib: "^1.0.0" } }));
     assert.deepEqual(await noticeProblems(directory), [`${NOTICES_FILE} is missing`]);
     await write(NOTICES_FILE, "# Third-party notices\n");

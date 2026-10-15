@@ -1,6 +1,7 @@
 import { MODULE_ID, I18N, SETTINGS, DEFAULT_ORIGIN } from "../constants.js";
 import { normalizeOrigin } from "../auth/origin.js";
 import { overlayRelay } from "./relay.js";
+import { dsnAppearanceStatus } from "./payload.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const L = key => game.i18n.localize(`${I18N}.overlay.${key}`);
@@ -88,6 +89,11 @@ export class OverlayPanel extends HandlebarsApplicationMixin(ApplicationV2) {
       push("subscription", L(status.subscription.ok ? "diag.allowed" : "error.notEntitled"), status.subscription);
       push("overlay", L(status.overlay.ok ? "diag.overlayActive" : "error.overlayDisabled"), status.overlay);
       push("obs", status.obs.ok ? Fmt("diag.obsConnected", { count: data.overlay.connectedClients }) : L("diag.obsMissing"), status.obs);
+      // Local, not from the account: a Dice So Nice update can hide the roller's dice look from the module.
+      const dice = dsnAppearanceStatus();
+      if (dice !== "absent") push("dice", dice === "ok" ? L("diag.diceOk")
+        : Fmt("diag.diceUnreadable", { version: game.modules?.get("dice-so-nice")?.version ?? "" }),
+      dice === "ok" ? PILLS.ok : PILLS.warning);
       if (game.user?.isGM) push("poll", status.poll.ok
         ? Fmt("diag.pollRecent", { seconds: data.tableCommands.secondsSinceLastPoll }) : L("diag.pollMissing"), status.poll);
     }

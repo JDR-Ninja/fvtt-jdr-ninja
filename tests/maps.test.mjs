@@ -1,12 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { strToU8, zipSync } from "fflate";
-import { carteFixture, archiveFixture, siteArchiveFixture, siteZip, crc32, SITE_README, SITE_ZIP_STAMP, IMAGE_BYTES } from "./maps-fixture.mjs";
+import { carteFixture, archiveFixture, siteArchiveFixture, siteZip, zipFile, crc32, utf8, imageOf, SITE_README, SITE_ZIP_STAMP, IMAGE_BYTES } from "./maps-fixture.mjs";
 import { validateDescription, summarize, isSafeEntryName } from "../scripts/maps/description.js";
 import { MapError, MAP_ERROR_CODES } from "../scripts/maps/errors.js";
 import { buildSceneData, paddingShift, cellRectangles, cellsToMap, idFromPath, sceneScale, slugify, defaultFolder,
   normalizeFolder, teleportLinks, relativeRegionUuid, absoluteRegionUuid, DEFAULT_NAMES } from "../scripts/maps/translate.js";
-import { readMapArchive, ARCHIVE_LIMITS, imageKind } from "../scripts/maps/zip.js";
+import { readMapArchive, ARCHIVE_LIMITS, imageKind, crc32 as readerCrc32 } from "../scripts/maps/zip.js";
 import { importMap, ensureFolder, ensureTeleports, uploadName, folderFileNames, missingFilePermission, movementCostActions, localizedNames } from "../scripts/maps/import.js";
 
 const IMAGES = { "L-1": "worlds/w/maps/sous-sol.webp", L0: "worlds/w/maps/rez.webp", L1: "worlds/w/maps/etage.webp" };
@@ -294,7 +293,7 @@ test("archive entry names stay inside the archive", () => {
 /* --------------------------------- the ZIP reader -------------------------------- */
 
 test("a valid archive yields the description and exactly the images it names", async () => {
-  const archive = archiveFixture(carteFixture(), { extra: { "niveaux/carte-etage-1.webp": [IMAGE_BYTES.webp, { level: 9 }] } });
+  const archive = archiveFixture(carteFixture(), { extra: { "niveaux/carte-etage-1.webp": [IMAGE_BYTES.webp, { method: 8 }] } });
   const { carte, images } = await readMapArchive(archive);
   assert.equal(carte.name, "Château des Brumes");
   assert.deepEqual([...images.keys()].sort(), ["niveaux/carte-etage-1.webp", "niveaux/carte-rez-de-chaussee.webp", "niveaux/carte-sous-sol-1.webp"]);
@@ -337,9 +336,8 @@ test("an archive written the way the website writes it is accepted: stored entri
 test("a PNG level image is read as a PNG", async () => {
   const carte = carteFixture();
   for (const level of carte.levels) level.image.file = level.image.file.replace(".webp", ".png");
-  const files = { "carte.json": strToU8(JSON.stringify(carte)) };
-  for (const level of carte.levels) files[level.image.file] = [IMAGE_BYTES.png, { level: 0 }];
-  const { images } = await readMapArchive(zipSync(files));
+  const { images } = await readMapArchive(zipFile([["carte.json", utf8(JSON.stringify(carte))],
+    ...carte.levels.map(level => [level.image.file, IMAGE_BYTES.png])]));
   assert([...images.values()].every(image => image.type === "image/png"));
 });
 
@@ -352,31 +350,31 @@ test("another format or version is refused before any image is read", async () =
   const carte = carteFixture();
   await assert.rejects(readMapArchive(archiveFixture({ ...carte, format: "something-else" })), failsWith("unsupportedFormat"));
   await assert.rejects(readMapArchive(archiveFixture({ ...carte, version: 2 })), failsWith("unsupportedVersion", error => error.details.version === "2"));
-  await assert.rejects(readMapArchive(archiveFixture(carte, { description: strToU8("{not json") })), failsWith("badDescription"));
-  await assert.rejects(readMapArchive(archiveFixture(carte, { description: strToU8("[]") })), failsWith("unsupportedFormat"));
-  const bom = Uint8Array.from([0xef, 0xbb, 0xbf, ...strToU8(JSON.stringify(carte))]);
+  await assert.rejects(readMapArchive(archiveFixture(carte, { description: utf8("{not json") })), failsWith("badDescription"));
+  await assert.rejects(readMapArchive(archiveFixture(carte, { description: utf8("[]") })), failsWith("unsupportedFormat"));
+  const bom = Uint8Array.from([0xef, 0xbb, 0xbf, ...utf8(JSON.stringify(carte))]);
   assert.equal((await readMapArchive(archiveFixture(carte, { description: bom }))).carte.version, 1, "a byte order mark is tolerated");
 });
 
 test("entry names that climb out of the archive, start at a root or use backslashes are refused", async () => {
   for (const name of ["../evil.txt", "niveaux/../../evil.webp", "/absolute.txt", "C:/drive.txt", "dossier\\evil.txt", "a//b.txt"]) {
-    await assert.rejects(readMapArchive(archiveFixture(carteFixture(), { extra: { [name]: strToU8("x") } })),
+    await assert.rejects(readMapArchive(archiveFixture(carteFixture(), { extra: { [name]: utf8("x") } })),
       failsWith("unsafeName"), name);
   }
   // A description whose image path climbs out is refused as a malformed description.
   const carte = carteFixture(); carte.levels[0].image.file = "../escape.webp";
-  await assert.rejects(readMapArchive(archiveFixture(carteFixture(), { description: strToU8(JSON.stringify(carte)) })),
+  await assert.rejects(readMapArchive(archiveFixture(carteFixture(), { description: utf8(JSON.stringify(carte)) })),
     failsWith("badDescription", error => error.details.detail === "levels[0].image.file"));
 });
 
 test("bytes that are not a zip, an archive without a description or a bad image are refused", async () => {
   await assert.rejects(readMapArchive(new Uint8Array(5)), failsWith("notZip"));
   await assert.rejects(readMapArchive(new Uint8Array(200).fill(7)), failsWith("notZip"));
-  await assert.rejects(readMapArchive(zipSync({ "niveaux/a.webp": [IMAGE_BYTES.webp, { level: 0 }] })), failsWith("missingDescription"));
+  await assert.rejects(readMapArchive(zipFile([["niveaux/a.webp", IMAGE_BYTES.webp]])), failsWith("missingDescription"));
   const wrong = Uint8Array.from({ length: 20 }, (_, i) => i + 1);
-  await assert.rejects(readMapArchive(archiveFixture(carteFixture(), { extra: { "niveaux/carte-etage-1.webp": [wrong, { level: 0 }] } })),
+  await assert.rejects(readMapArchive(archiveFixture(carteFixture(), { extra: { "niveaux/carte-etage-1.webp": [wrong] } })),
     failsWith("badImage", error => error.details.file === "niveaux/carte-etage-1.webp"));
-  await assert.rejects(readMapArchive(archiveFixture(carteFixture(), { extra: { "niveaux/carte-etage-1.webp": [IMAGE_BYTES.png, { level: 0 }] } })),
+  await assert.rejects(readMapArchive(archiveFixture(carteFixture(), { extra: { "niveaux/carte-etage-1.webp": [IMAGE_BYTES.png] } })),
     failsWith("badImage"), "a PNG under a .webp name");
   assert.equal(imageKind(IMAGE_BYTES.webp), "webp"); assert.equal(imageKind(IMAGE_BYTES.png), "png");
   assert.equal(imageKind(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0])), "jpeg"); assert.equal(imageKind(new Uint8Array(3)), null);
@@ -387,12 +385,166 @@ test("sizes are bounded before anything is inflated", async () => {
   await assert.rejects(readMapArchive(huge), failsWith("tooLarge"));
   const description = new Uint8Array(ARCHIVE_LIMITS.descriptionBytes + 1).fill(32);
   await assert.rejects(readMapArchive(archiveFixture(carteFixture(), { description })), failsWith("tooLarge"));
-  const extra = Object.fromEntries(Array.from({ length: ARCHIVE_LIMITS.entries + 1 }, (_, i) => [`extra/${i}.txt`, strToU8("x")]));
+  const extra = Object.fromEntries(Array.from({ length: ARCHIVE_LIMITS.entries + 1 }, (_, i) => [`extra/${i}.txt`, utf8("x")]));
   await assert.rejects(readMapArchive(archiveFixture(carteFixture(), { extra })), failsWith("tooManyEntries"));
 });
 
-test("a zip library that cannot be loaded is reported as such", async () => {
-  await assert.rejects(readMapArchive(archiveFixture(), { load: async () => { throw new Error("no such package"); } }), failsWith("readerUnavailable"));
+test("an image limit and a total limit are read from the directory, whatever the entries hold", async () => {
+  const carte = carteFixture(), file = carte.levels[0].image.file;
+  await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [IMAGE_BYTES.webp, { method: 8, size: ARCHIVE_LIMITS.imageBytes + 1 }] } })),
+    failsWith("tooLarge"), "one image past its limit");
+  const extra = Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`extra/${i}.bin`, [new Uint8Array(1), { method: 8, size: 60 * 1024 * 1024 }]]));
+  await assert.rejects(readMapArchive(archiveFixture(carte, { extra })), failsWith("tooLarge"), "seven entries of 60 MiB are past the total");
+});
+
+/* ---- the reader on what other tools write, and on what it refuses ---- */
+
+/** The entries of the fixture map (the description, a level image each, the readme), each written with the same options. */
+const mapEntries = ({ carte = carteFixture(), image = IMAGE_BYTES.webp, options = {} } = {}) => [["carte.json", utf8(JSON.stringify(carte)), options],
+  ...carte.levels.map(level => [level.image.file, image, options]), ["LISEZMOI.txt", utf8(SITE_README), options]];
+const LEVEL_FILES = carteFixture().levels.map(level => level.image.file).sort();
+const hasImages = (images, bytes = IMAGE_BYTES.webp) => {
+  assert.deepEqual([...images.keys()].sort(), LEVEL_FILES);
+  for (const image of images.values()) assert.deepEqual([...image.bytes], [...bytes]);
+};
+const refusedAs = detail => failsWith("notZip", error => error.details.detail === detail);
+
+test("the reader's CRC-32 is the standard one", () => {
+  assert.equal(readerCrc32(utf8("123456789")), 0xcbf43926);
+  assert.equal(readerCrc32(new Uint8Array(0)), 0);
+  const image = imageOf("png", 10_000);
+  assert.equal(readerCrc32(image), crc32(image));
+});
+
+test("an archive re-zipped with Windows or 7-Zip is read: deflated entries, directory entries, no UTF-8 flag, extra fields that differ", async () => {
+  const image = imageOf("webp", 300_000);
+  const options = { method: 8, utf8: false, localExtra: Uint8Array.of(0x55, 0x54, 5, 0, 3, 1, 2, 3, 4), centralExtra: Uint8Array.of(0x55, 0x54, 1, 0, 3) };
+  const zip = zipFile([["niveaux/", new Uint8Array(0)], ...mapEntries({ image, options })]);
+  const { carte, images } = await readMapArchive(zip);
+  assert.equal(carte.name, "Château des Brumes");
+  hasImages(images, image);
+  assert(zip.length < image.length * 3, "the images really are deflated");
+  // A view into a larger buffer reads the same.
+  const padded = new Uint8Array(zip.length + 100); padded.set(zip, 50);
+  hasImages((await readMapArchive(padded.subarray(50, 50 + zip.length))).images, image);
+});
+
+test("stored and deflated entries share an archive, with or without a data descriptor", async () => {
+  const image = imageOf("webp", 50_000), carte = carteFixture();
+  const [first, second, third] = carte.levels.map(level => level.image.file);
+  const mixed = zipFile([["carte.json", utf8(JSON.stringify(carte)), { method: 8, descriptor: true }], [first, image],
+    [second, image, { method: 8 }], [third, image, { descriptor: true }], ["notes/lisez-moi.txt", utf8("x"), { method: 8, descriptor: true }]]);
+  hasImages((await readMapArchive(mixed)).images, image);
+  // The sizes and the CRC-32 come from the directory: the local headers of a data descriptor archive hold zeros.
+  for (const options of [{ descriptor: true }, { method: 8, descriptor: true }]) {
+    hasImages((await readMapArchive(zipFile(mapEntries({ image, options })))).images, image);
+  }
+  assert.equal(new DataView(zipFile(mapEntries({ options: { descriptor: true } })).buffer).getUint32(14, true), 0, "the local header's CRC-32 is empty");
+});
+
+test("an end record behind a comment is found, even when the comment holds another end record", async () => {
+  const comment = new Uint8Array(1000); comment.set([0x50, 0x4b, 0x05, 0x06], 100);
+  hasImages((await readMapArchive(zipFile(mapEntries(), { comment }))).images);
+  hasImages((await readMapArchive(zipFile(mapEntries(), { comment: new Uint8Array(0xffff).fill(32) }))).images);
+  const zip = zipFile(mapEntries()), padded = new Uint8Array(zip.length + 10);
+  padded.set(zip);
+  await assert.rejects(readMapArchive(padded), refusedAs("no end record"), "bytes after the end record are not a comment");
+});
+
+test("a damaged archive is refused: a wrong CRC-32, a wrong size, a flipped byte, a truncated file", async () => {
+  const carte = carteFixture(), file = carte.levels[1].image.file, wrongSize = IMAGE_BYTES.webp.length + 5;
+  for (const method of [0, 8]) {
+    await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { "carte.json": [utf8(JSON.stringify(carte)), { method, crc: 1234 }] } })),
+      refusedAs("size or checksum of an entry"), `the description's CRC-32, method ${method}`);
+    await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [IMAGE_BYTES.webp, { method, crc: 0 }] } })),
+      refusedAs("size or checksum of an entry"), `an image's CRC-32, method ${method}`);
+  }
+  await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [IMAGE_BYTES.webp, { method: 8, size: wrongSize }] } })), failsWith("notZip"), "more declared than inflated");
+  await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [IMAGE_BYTES.webp, { size: wrongSize }] } })), refusedAs("stored entry of two sizes"));
+  await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [IMAGE_BYTES.webp, { damage: true }] } })), refusedAs("size or checksum of an entry"), "a stored byte flipped");
+  await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [imageOf("webp", 20_000), { method: 8, damage: true }] } })), failsWith("notZip"), "a deflated byte flipped");
+  await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [imageOf("webp", 20_000), { method: 8, packed: 3 }] } })), failsWith("notZip"), "a deflate stream cut short");
+  const zip = archiveFixture();
+  for (const missing of [1, 2, 21, 22, 23, 100, zip.length >> 1, zip.length - 21, zip.length - 5]) {
+    await assert.rejects(readMapArchive(zip.subarray(0, zip.length - missing)), failsWith("notZip"), `${missing} bytes missing`);
+  }
+});
+
+test("an entry that inflates past its declared size is cut off at once, not inflated to the end", async () => {
+  const carte = carteFixture(), file = carte.levels[0].image.file;
+  const bomb = new Uint8Array(24 * 1024 * 1024); bomb.set(IMAGE_BYTES.webp);
+  const zip = archiveFixture(carte, { extra: { [file]: [bomb, { method: 8, size: 64 * 1024 }] } });
+  assert(zip.length < 200_000, "a few kilobytes of archive for 24 MiB of data");
+  // The browser's decompression, counting what it hands out.
+  const Real = globalThis.DecompressionStream, original = Object.getOwnPropertyDescriptor(globalThis, "DecompressionStream");
+  let produced = 0;
+  Object.defineProperty(globalThis, "DecompressionStream", { configurable: true, writable: true, value: function CountingDecompressionStream(format) {
+    const real = new Real(format);
+    return { writable: real.writable, readable: real.readable.pipeThrough(new TransformStream({
+      transform(chunk, controller) { produced += chunk.length; controller.enqueue(chunk); } })) };
+  } });
+  try {
+    await assert.rejects(readMapArchive(zip), refusedAs("entry inflates past its declared size"));
+  } finally { Object.defineProperty(globalThis, "DecompressionStream", original); }
+  assert(produced > 64 * 1024 && produced < 2 * 1024 * 1024, `${produced} bytes inflated for 65 536 declared and 25 165 824 held`);
+  // The same for the description.
+  await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { "carte.json": [utf8(JSON.stringify(carte)), { method: 8, size: 100 }] } })), refusedAs("entry inflates past its declared size"));
+});
+
+test("ZIP64 archives are refused: the 0xFFFFFFFF markers of an entry, of the end record, and the ZIP64 locator", async () => {
+  const carte = carteFixture(), file = carte.levels[0].image.file;
+  for (const options of [{ method: 8, size: 0xffffffff }, { method: 8, packed: 0xffffffff }, { localOffset: 0xffffffff }]) {
+    await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [IMAGE_BYTES.webp, options] } })), refusedAs("ZIP64"), JSON.stringify(options));
+  }
+  for (const archive of [{ end: { entries: 0xffff, onDisk: 0xffff } }, { end: { size: 0xffffffff } }, { end: { offset: 0xffffffff } }, { zip64Locator: true }]) {
+    await assert.rejects(readMapArchive(zipFile(mapEntries(), archive)), refusedAs("ZIP64"), JSON.stringify(archive));
+  }
+});
+
+test("encryption, several disks and every method but stored and deflate are refused", async () => {
+  const carte = carteFixture(), file = carte.levels[0].image.file;
+  for (const flags of [1, 1 | 8, 0x40, 0x2000]) {
+    await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [IMAGE_BYTES.webp, { flags }] } })), refusedAs("encrypted"), `flags ${flags}`);
+  }
+  for (const methodCode of [1, 6, 9, 12, 14, 93, 98]) {
+    await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [IMAGE_BYTES.webp, { methodCode }] } })), refusedAs(`compression method ${methodCode}`));
+  }
+  await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { "carte.json": [utf8(JSON.stringify(carte)), { methodCode: 14 }] } })), refusedAs("compression method 14"));
+  for (const end of [{ disk: 1 }, { startDisk: 1 }, { onDisk: 3 }]) {
+    await assert.rejects(readMapArchive(zipFile(mapEntries(), { end })), refusedAs("several disks"), JSON.stringify(end));
+  }
+});
+
+test("a directory, header or entry outside the archive, or overlapping another, is refused", async () => {
+  for (const end of [{ offset: 0x7fffffff }, { size: 100_000 }, { size: 10 }, { entries: 6, onDisk: 6 }, { entries: 4, onDisk: 4 }]) {
+    await assert.rejects(readMapArchive(zipFile(mapEntries(), { end })), failsWith("notZip"), JSON.stringify(end));
+  }
+  const carte = carteFixture(), file = carte.levels[0].image.file;
+  for (const options of [{ localOffset: 100_000 }, { localOffset: 7 }, { method: 8, packed: 1_000_000 }, { localName: `${file.slice(0, -1)}x` }, { localName: "carte" }]) {
+    await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [IMAGE_BYTES.webp, options] } })), failsWith("notZip"), JSON.stringify(options));
+  }
+  // A first entry that claims the bytes of the next ones.
+  await assert.rejects(readMapArchive(zipFile([["notes.txt", utf8("x".repeat(10)), { method: 8, packed: 200 }], ...mapEntries()])), refusedAs("overlapping entries"));
+});
+
+test("two entries of the same name are refused, and a name in another code page is read byte for byte", async () => {
+  const entries = mapEntries(), level = carteFixture().levels[0].image.file;
+  await assert.rejects(readMapArchive(zipFile([...entries, ["carte.json", utf8("{}")]])), failsWith("unsafeName", error => error.details.name === "carte.json"));
+  await assert.rejects(readMapArchive(zipFile([...entries, [level, IMAGE_BYTES.png]])), failsWith("unsafeName"));
+  // "n\xe9.txt" is not UTF-8 (Windows writes names in its code page without the UTF-8 flag): harmless when no one asks for it.
+  hasImages((await readMapArchive(zipFile([...entries, ["", utf8("x"), { rawName: Uint8Array.of(0x6e, 0xe9, 0x2e, 0x74, 0x78, 0x74), utf8: false }]]))).images);
+  await assert.rejects(readMapArchive(zipFile([...entries, ["", utf8("x"), { rawName: Uint8Array.of(0x2e, 0x2e, 0x2f, 0xff), utf8: false }]])),
+    failsWith("unsafeName"), "the name is checked as it reads");
+});
+
+test("the description and image checks apply to deflated entries too", async () => {
+  const carte = carteFixture(), file = carte.levels[2].image.file;
+  await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [IMAGE_BYTES.png, { method: 8 }] } })), failsWith("badImage", error => error.details.file === file));
+  await assert.rejects(readMapArchive(archiveFixture(carte, { extra: { [file]: [Uint8Array.from({ length: 40 }, (_, i) => i), { method: 8 }] } })), failsWith("badImage"));
+  await assert.rejects(readMapArchive(archiveFixture(carte, { description: utf8("{not json") })), failsWith("badDescription"));
+  const bom = Uint8Array.from([0xef, 0xbb, 0xbf, ...utf8(JSON.stringify(carte))]);
+  assert.equal((await readMapArchive(zipFile(mapEntries({ options: { method: 8 } }).map(([name, bytes, options]) =>
+    [name, name === "carte.json" ? bom : bytes, options])))).carte.version, 1, "a byte order mark is tolerated");
 });
 
 /* ---------------------------------- the import --------------------------------- */

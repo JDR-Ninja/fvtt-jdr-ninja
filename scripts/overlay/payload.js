@@ -82,6 +82,55 @@ function dsnRoller(message, current) {
 }
 
 /**
+ * A user's Dice So Nice appearance scopes (`global` plus per-die-type entries), merged as DSN merges them
+ * before it draws: the user-colour default, the package defaults for a player who never saved a look, the
+ * user flag, then the speaking actor's flag. Up to 6.3, DSN exposes this as the static
+ * `Dice3D.ALL_CUSTOMIZATION`. 6.4 moved it into a settings class it does not export, so the same steps are
+ * replayed with the helpers it does export (`dice3d.exports.Utils`). Undefined when neither exists: a
+ * future DSN that moves them again must show up as unreadable (`dsnAppearanceStatus`), never as a guess.
+ */
+function dsnAppearanceScopes(dsn, user, actor) {
+  const Dice3D = dsn?.constructor;
+  if (typeof Dice3D?.ALL_CUSTOMIZATION === "function") {
+    return Dice3D.ALL_CUSTOMIZATION(user, dsn.DiceFactory, actor)?.appearance;
+  }
+  const Utils = dsn?.exports?.Utils, utils = globalThis.foundry?.utils;
+  if (typeof Utils?.contrastOf !== "function" || typeof Utils?.sanitizeAppearance !== "function"
+    || typeof utils?.mergeObject !== "function" || typeof utils?.deepClone !== "function") return undefined;
+  const merge = (target, source) => utils.mergeObject(target, utils.deepClone(source), { applyOperators: true });
+  const flag = (document, key) => document?.getFlag?.("dice-so-nice", key);
+  const color = user.color?.toString?.() ?? "#000000";
+  let appearance = { global: { labelColor: Utils.contrastOf(color), diceColor: color, outlineColor: color,
+    edgeColor: color, texture: "none", material: "auto", font: "auto", colorset: "custom", system: "standard" } };
+  const packageDefaults = dsn.DiceFactory?.getRole?.("basic")?.defaults;
+  if (!flag(user, "saved")?.appearance && packageDefaults && Object.keys(packageDefaults).length) {
+    appearance = merge(appearance, Utils.sanitizeAppearance(utils.deepClone(packageDefaults), user));
+  }
+  appearance = merge(appearance, flag(user, "appearance") ?? {});
+  delete appearance.dimensions;
+  const actorAppearance = flag(actor, "appearance");
+  if (actorAppearance) appearance = merge(appearance, actorAppearance);
+  return Utils.sanitizeAppearance(appearance, user);
+}
+
+/**
+ * Whether this client can read the dice look Dice So Nice draws: `absent` without DSN, `ok` when the current
+ * user's appearance resolves, `unreadable` when DSN is there but neither known way to read it works (a DSN
+ * update moved its internals again, as 6.4 did). Shown in the overlay panel's diagnostics, since an unreadable
+ * appearance changes nothing else: rolls still reach the stream, in the overlay's default dice.
+ */
+export function dsnAppearanceStatus(current = globalThis.game) {
+  const dsn = current?.dice3d;
+  if (!dsn) return "absent";
+  try {
+    if (typeof dsn.DiceFactory?.getAppearanceForDice !== "function" || !current.user) return "unreadable";
+    const scopes = dsnAppearanceScopes(dsn, current.user, null);
+    const resolved = scopes?.global ? dsn.DiceFactory.getAppearanceForDice(scopes, "d20") : null;
+    return resolved && typeof resolved === "object" ? "ok" : "unreadable";
+  } catch { return "unreadable"; }
+}
+
+/**
  * The colours and material/font names the roller's dice show at the table, resolved by the installed
  * Dice So Nice itself: its user-colour default, the user's settings (flag `global`, or a per-die-type
  * entry), a chosen preset, an actor override and a system's preferred colorset. Never textures, meshes
@@ -90,13 +139,11 @@ function dsnRoller(message, current) {
  */
 export function extractAppearance(message, current = globalThis.game) {
   try {
-    const dsn = current?.dice3d, Dice3D = dsn?.constructor, factory = dsn?.DiceFactory;
-    if (typeof Dice3D?.ALL_CUSTOMIZATION !== "function" || typeof factory?.getAppearanceForDice !== "function") {
-      return undefined;
-    }
+    const dsn = current?.dice3d, factory = dsn?.DiceFactory;
+    if (typeof factory?.getAppearanceForDice !== "function") return undefined;
     const { author, actor } = dsnRoller(message, current);
     if (!author) return undefined;
-    const appearances = Dice3D.ALL_CUSTOMIZATION(author, factory, actor)?.appearance;
+    const appearances = dsnAppearanceScopes(dsn, author, actor);
     if (!appearances?.global) return undefined;
     let resolved;
     try { resolved = factory.getAppearanceForDice(appearances, dieTypeOf(message)); }

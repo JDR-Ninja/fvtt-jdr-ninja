@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import Handlebars from "handlebars";
 import { OverlayRelay, overlayRelay, CARD_HOLD_CLASS } from "../scripts/overlay/relay.js";
-import { buildOverlayPayload, extractAppearance, tableFormulaIsMeshBacked } from "../scripts/overlay/payload.js";
+import { buildOverlayPayload, dsnAppearanceStatus, extractAppearance, tableFormulaIsMeshBacked } from "../scripts/overlay/payload.js";
 import { registerSettings } from "../scripts/settings.js";
 
 class App {
@@ -13,8 +13,16 @@ class App {
   async close() { this.rendered = false; return this; }
   bringToFront() {}
 }
+/** Foundry's deep merge, in place and source-wins, for the plain objects Dice So Nice stores. */
+function mergeObject(target, source) {
+  for (const [key, value] of Object.entries(source)) {
+    const nested = value && typeof value === "object" && !Array.isArray(value) && target[key] && typeof target[key] === "object";
+    target[key] = nested ? mergeObject(target[key], value) : value;
+  }
+  return target;
+}
 globalThis.foundry = { applications: { api: { ApplicationV2: App, HandlebarsApplicationMixin: base => base } },
-  utils: { randomID: () => "fixture-test-id" } };
+  utils: { randomID: () => "fixture-test-id", deepClone: value => structuredClone(value), mergeObject } };
 const { OverlayPanel, diagnosticStatus, formatMoment } = await import("../scripts/overlay/panel.js");
 const { ConnectionPanel } = await import("../scripts/connection-panel.js");
 const copy = JSON.parse(await readFile(new URL("../lang/fr.json", import.meta.url), "utf8"));
@@ -216,6 +224,60 @@ test("Dice So Nice: absent, inactive or failing DSN sends no appearance and the 
   assert.equal(payload.total, 22);
   game.dice3d = fakeDsn();
   assert.equal(buildOverlayPayload(message("relayed", { author: dsnUser("player") })).appearance.diceColor, "#3366cc");
+});
+
+/**
+ * A stand-in for Dice So Nice 6.4.4, which no longer has `Dice3D.ALL_CUSTOMIZATION`: it keeps that step in a
+ * settings class it does not export. What it still exports is `exports.Utils` (`contrastOf`,
+ * `sanitizeAppearance`), the package defaults of its `basic` role, and the user, `saved` and actor flags.
+ */
+function fakeDsn64({ packageDefaults = {} } = {}) {
+  const { DiceFactory } = fakeDsn();
+  DiceFactory.getRole = id => id === "basic" ? { id, defaults: packageDefaults } : undefined;
+  const sanitized = [];
+  return { DiceFactory, sanitized, exports: { Utils: {
+    contrastOf: () => "#FFFFFF",
+    sanitizeAppearance(appearance, user) {
+      sanitized.push(user?.id);
+      for (const scope of Object.values(appearance)) if (scope.material === "unknown-material") scope.material = "auto";
+      return appearance;
+    },
+  } } };
+}
+const dsnFlags = flags => (scope, key) => scope === "dice-so-nice" ? flags[key] : undefined;
+const dsn64User = (id, flags = {}, values = {}) => ({ ...dsnUser(id), getFlag: dsnFlags(flags), ...values });
+
+test("Dice So Nice 6.4: the look is rebuilt from what DSN still exports, in DSN's own order", () => {
+  const dsn = game.dice3d = fakeDsn64({ packageDefaults: { global: { diceColor: "#445566" } } });
+  // A player who never saved a look: the user colour default, then the package's basic defaults.
+  assert.deepEqual(extractAppearance(message("fresh", { author: dsn64User("fresh") })),
+    { diceColor: "#445566", labelColor: "#ffffff", outlineColor: "#3366cc", edgeColor: "#3366cc" });
+  // A saved look replaces the package defaults, and DSN's sanitizer still runs over it.
+  const look = { global: { diceColor: "#aa0000", labelColor: "#00aa00", material: "unknown-material", font: "Signika" } };
+  const saved = dsn64User("saved", { saved: { appearance: true }, appearance: look });
+  assert.deepEqual(extractAppearance(message("saved", { author: saved })),
+    { diceColor: "#aa0000", labelColor: "#00aa00", outlineColor: "#3366cc", edgeColor: "#3366cc", font: "Signika" });
+  assert.equal(look.global.material, "unknown-material");
+  assert(dsn.sanitized.includes("fresh") && dsn.sanitized.includes("saved"));
+  // The speaking actor's look wins over the user's.
+  const hero = { id: "hero", getFlag: dsnFlags({ appearance: { global: { diceColor: "#654321" } } }) };
+  const spoken = message("actor", { author: saved, speaker: { actor: "hero" },
+    constructor: { getSpeakerActor: speaker => speaker.actor === "hero" ? hero : null } });
+  assert.equal(extractAppearance(spoken).diceColor, "#654321");
+});
+
+test("Dice So Nice: a version whose look the module cannot read is reported, not guessed", () => {
+  game.user = dsn64User("me", {}, { isGM: true });
+  game.dice3d = undefined;
+  assert.equal(dsnAppearanceStatus(), "absent");
+  for (const dsn of [fakeDsn(), fakeDsn64()]) { game.dice3d = dsn; assert.equal(dsnAppearanceStatus(), "ok"); }
+  // DSN is there, but neither ALL_CUSTOMIZATION nor the exported helpers are: a later update moved them again.
+  game.dice3d = { DiceFactory: fakeDsn().DiceFactory };
+  assert.equal(dsnAppearanceStatus(), "unreadable");
+  assert.equal(extractAppearance(message("moved", { author: dsn64User("player") })), undefined);
+  game.dice3d = fakeDsn64();
+  game.dice3d.DiceFactory.getAppearanceForDice = () => { throw new Error("DSN failure"); };
+  assert.equal(dsnAppearanceStatus(), "unreadable");
 });
 
 for (const order of ["before", "after", "fallback", "declined"]) {
@@ -579,6 +641,22 @@ test("each diagnostics line carries its pill beside its message; the account sta
   settings.set("overlayLastSuccessAt", Date.UTC(2026, 9, 8, 19, 30, 45));
   const { lastSuccess } = await panel._prepareContext();
   assert.match(lastSuccess, /^Dernier envoi accepté : /); assert.doesNotMatch(lastSuccess, /:45/);
+});
+
+test("the diagnostics show whether the Dice So Nice look reaches the overlay, and name the DSN version when it cannot", async () => {
+  const label = copy["JDRNINJA.overlay.diag.dice"];
+  const panel = new OverlayPanel();
+  panel._diagnostics = accountAnswer({ overlay: { exists: true, enabled: true, connectedClients: 1 } });
+  const diceRow = async () => (await panel._prepareContext()).rows.find(row => row.label === label);
+  assert.equal(await diceRow(), undefined);
+  game.user = dsn64User("gm", {}, { isGM: true });
+  game.modules = new Map([["dice-so-nice", { active: true, version: "9.0.0" }]]);
+  game.dice3d = fakeDsn64();
+  assert.deepEqual(await diceRow(), { label, message: copy["JDRNINJA.overlay.diag.diceOk"], level: "success", icon: "fa-circle-check" });
+  game.dice3d = { DiceFactory: fakeDsn().DiceFactory };
+  const unreadable = await diceRow();
+  assert.equal(unreadable.level, "warning");
+  assert.match(unreadable.message, /^Impossible de lire les réglages d'apparence de Dice So Nice 9\.0\.0\./);
 });
 
 test("the overlay window is one layout of three titled sections, one primary action, and a footer that holds the navigation", async () => {

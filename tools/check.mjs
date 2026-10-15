@@ -3,7 +3,7 @@ import { readFile, readdir, access } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MODULE_ID, I18N } from "../scripts/constants.js";
-import { PACKAGED_ASSETS, releaseManifest } from "./release-manifest.mjs";
+import { packagedAssets, releaseManifest } from "./release-manifest.mjs";
 import { noticeProblems } from "./third-party-notices.mjs";
 import { MAP_ERROR_CODES } from "../scripts/maps/errors.js";
 import { DEFAULT_NAMES } from "../scripts/maps/translate.js";
@@ -60,8 +60,8 @@ for (const reason of ["invalidOrigin", "invalidToken", "originChanged", "invalid
 // The map import window reads its error messages and region names by code, so no source scan sees them.
 for (const code of MAP_ERROR_CODES) assert(keys.includes(`${I18N}.maps.error.${code}`), `Missing map error: ${code}`);
 for (const name of Object.keys(DEFAULT_NAMES)) assert(keys.includes(`${I18N}.maps.region.${name}`), `Missing map region name: ${name}`);
-// The bundle inlines fflate and drops its legal comments: the package ships its notice, which has to name the
-// installed version and carry the licence text.
-for (const asset of PACKAGED_ASSETS) await access(join(root, asset));
+// The bundle inlines its runtime dependencies (none today) and drops their legal comments: a package that has some
+// ships their notice, which has to name the installed version and carry the licence text.
+for (const asset of packagedAssets(packageMetadata)) await access(join(root, asset));
 assert.deepEqual(await noticeProblems(root), [], "Third-party notices");
 console.log(`Manifest and ${manifest.languages.length} locales checked (${keys.length} keys each).`);

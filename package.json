@@ -24,8 +24,5 @@
     "esbuild": "^0.25.0",
     "handlebars": "^4.7.10",
     "playwright": "1.62.1"
-  },
-  "dependencies": {
-    "fflate": "^0.8.3"
   }
 }
