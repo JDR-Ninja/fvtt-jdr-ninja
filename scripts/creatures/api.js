@@ -23,8 +23,6 @@ export class CreatureClient {
     if (changed) for (const listener of this.listeners) { try { listener(); } catch { /* A view cannot break access checks. */ } }
   }
   enabled() { return this.getGame().settings.get(MODULE_ID, SETTINGS.creaturesEnabled) === true; }
-  /** Only a server answer that this account lacks the subscription; a missing connection or permission needs another step. */
-  needsSubscription(reason) { return reason === "tierRequired" || this.access?.entitled === false; }
   capture() {
     const current = this.getGame();
     return { revision: this.revision, world: current.world?.id, user: current.user?.id, gm: current.user?.isGM === true,

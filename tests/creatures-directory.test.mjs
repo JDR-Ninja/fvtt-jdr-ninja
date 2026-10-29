@@ -9,15 +9,17 @@ const strings = JSON.parse(await readFile(new URL("../lang/en.json", import.meta
 const hooks = new Map();
 globalThis.Hooks = { on: (name, fn) => hooks.set(name, fn) };
 globalThis.HTMLElement = class {};
-/** The few DOM members the shortcuts use: children, class selectors, append, remove, data attributes and click listeners. */
+/** The few DOM members the shortcuts use: children, class selectors, append, prepend, remove, attributes and click listeners. */
 class Element extends globalThis.HTMLElement {
   nodes = []; dataset = {}; attributes = {}; listeners = {}; parent = null; className = "";
   constructor(tag) { super(); this.tag = tag; }
   get children() { return this.nodes.filter(node => node instanceof Element); }
   get childElementCount() { return this.children.length; }
   get textContent() { return this.nodes.map(node => typeof node === "string" ? node : node.textContent).join(""); }
+  set textContent(value) { this.nodes = [String(value)]; }
   get title() { return this.attributes.title; }
   append(...items) { for (const item of items) { if (item instanceof Element) { item.remove(); item.parent = this; } this.nodes.push(item); } }
+  prepend(...items) { for (const item of [...items].reverse()) { if (item instanceof Element) { item.remove(); item.parent = this; } this.nodes.unshift(item); } }
   remove() { this.parent?.nodes.splice(this.parent.nodes.indexOf(this), 1); this.parent = null; }
   setAttribute(name, value) { this.attributes[name] = String(value); }
   addEventListener(type, listener) { this.listeners[type] = listener; }
@@ -48,10 +50,11 @@ function reset(current = gameFixture()) {
   creatureClient.invalidate(); calls = 0; ui.actors.renders = 0;
   creatureClient.request = async () => { calls++; return answer(); };
 }
-/** Another integration (Atlas) creating the shared row with its own shortcut before ours renders. */
+/** Another integration (Atlas) joining the shared row, which it always opens with, or creating it when it renders first. */
 function atlasShortcut(parent) {
   const row = parent.querySelector(".jn-directory-actions") ?? child(parent, "jn-directory-actions");
-  child(row, "jdr-ninja-atlas-open jn-directory-button", "button");
+  const button = new Element("button"); button.className = "jdr-ninja-atlas-open jn-directory-button";
+  row.prepend(button);
   return row;
 }
 
@@ -66,13 +69,17 @@ test("generator shortcuts appear only after the server grants access, with short
   renderCreatureButtons(null, view.html); renderCreatureButtons(null, view.html);
   assert.equal(calls, 1, "known access is not checked again");
   const buttons = view.buttons();
-  assert.deepEqual(buttons.map(button => [button.className, button.textContent, button.dataset.tooltip]), [
+  assert.deepEqual(buttons.map(button => [button.className, button.textContent, button.attributes["data-tooltip"]]), [
     ["jdr-ninja-creature-open jn-directory-button", strings["JDRNINJA.creatures.monsterShortcut"], strings["JDRNINJA.creatures.monster"]],
     ["jdr-ninja-creature-open jn-directory-button", strings["JDRNINJA.creatures.npcShortcut"], strings["JDRNINJA.creatures.npc"]]]);
   assert(buttons.every(button => !/premium/i.test(button.textContent)));
   assert(buttons.every(button => button.type === "button" && button.title === undefined), "the tooltip replaces the title attribute");
+  // Built by the shared helper: the full title is the accessible name as well as the tooltip, and the short label sits in a span.
+  assert.deepEqual(buttons.map(button => button.attributes["aria-label"]), [strings["JDRNINJA.creatures.monster"], strings["JDRNINJA.creatures.npc"]]);
+  assert.deepEqual(buttons.map(button => button.children.map(node => node.tag)), [["i", "span"], ["i", "span"]]);
+  assert.deepEqual(buttons.map(button => button.children[1].textContent), [strings["JDRNINJA.creatures.monsterShortcut"], strings["JDRNINJA.creatures.npcShortcut"]]);
   assert.deepEqual(buttons.map(button => [button.children[0].tag, button.children[0].className, button.children[0].attributes["aria-hidden"]]), [
-    ["i", "fa-solid fa-dragon", "true"], ["i", "fa-solid fa-user", "true"]], "an icon each, hidden from assistive technology");
+    ["i", "fa-solid fa-dragon", "true"], ["i", "fa-solid fa-masks-theater", "true"]], "an icon each, hidden from assistive technology; the NPC has the masks");
   // Both live in one compact row, below Foundry's own buttons and inside the header actions.
   assert.equal(view.rows().length, 1); assert.equal(view.rows()[0].parent, view.actions);
   assert.equal(view.rows()[0].children.length, 2); assert(buttons.every(button => button.parent === view.rows()[0]));
@@ -93,11 +100,11 @@ test("the shortcuts reuse the shared row another integration created and never a
   assert.equal(atlasFirst.rows().length, 1);
   assert.deepEqual(atlasFirst.rows()[0].children.map(button => button.className),
     ["jdr-ninja-atlas-open jn-directory-button", "jdr-ninja-creature-open jn-directory-button", "jdr-ninja-creature-open jn-directory-button"]);
-  // Ours first: Atlas finds the row and joins it.
+  // Ours first: Atlas finds the row and joins it, in front.
   const ours = directory();
   renderCreatureButtons(null, ours.html); atlasShortcut(ours.actions);
   assert.equal(ours.rows().length, 1); assert.equal(ours.rows()[0].children.length, 3);
-  assert(ours.rows()[0].children.at(-1).hasClass("jdr-ninja-atlas-open"));
+  assert(ours.rows()[0].children[0].hasClass("jdr-ninja-atlas-open"), "Atlas stays first whichever renders first");
   // Rendering again never duplicates our buttons or the row.
   for (let i = 0; i < 3; i++) renderCreatureButtons(null, ours.html);
   assert.equal(ours.rows().length, 1); assert.equal(ours.buttons().length, 2);

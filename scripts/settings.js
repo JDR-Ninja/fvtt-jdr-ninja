@@ -26,6 +26,12 @@ export function menuLauncher(panel) {
 export function registerSettings({ menus = {}, onAtlasChange = noop, onAccountChange = noop, onOverlaySwitch = noop,
   onOverlayPreference = noop, onStreamDeckChange = noop, onCreaturesChange = noop } = {}) {
   const launcher = panel => panel ? menuLauncher(panel) : undefined;
+  // V14 lists every menu of a module before its settings, in registration order: Connections is the first line, for a
+  // player as for a GM. The activations and preferences it and the feature windows own are not listed at all.
+  if (menus.connections) game.settings.registerMenu(MODULE_ID, "connections", {
+    name: `${I18N}.menu.name`, label: `${I18N}.menu.label`, hint: `${I18N}.menu.hint`,
+    icon: "fa-solid fa-link", type: launcher(menus.connections), restricted: false,
+  });
   for (const kind of ["account", "atlas"]) {
     const scope = kind === "atlas" ? "world" : "client";
     const onChange = kind === "atlas" ? onAtlasChange : onAccountChange;
@@ -37,8 +43,7 @@ export function registerSettings({ menus = {}, onAtlasChange = noop, onAccountCh
     });
   }
   game.settings.register(MODULE_ID, SETTINGS.atlasEnabled, {
-    name: `${I18N}.atlas.enable`, hint: `${I18N}.atlas.enableHint`,
-    scope: "world", config: true, type: Boolean, default: false, onChange: onAtlasChange,
+    scope: "world", config: false, type: Boolean, default: false, onChange: onAtlasChange,
   });
   game.settings.register(MODULE_ID, SETTINGS.atlasCampaignId, {
     scope: "world", config: false, type: String, default: "",
@@ -47,10 +52,6 @@ export function registerSettings({ menus = {}, onAtlasChange = noop, onAccountCh
     scope: "world", config: false, type: Boolean, default: false,
   });
   registerCreatureSettings(onCreaturesChange, launcher(menus.monster), launcher(menus.npc));
-  if (menus.connections) game.settings.registerMenu(MODULE_ID, "connections", {
-    name: `${I18N}.menu.name`, label: `${I18N}.menu.label`, hint: `${I18N}.menu.hint`,
-    icon: "fa-solid fa-link", type: launcher(menus.connections), restricted: false,
-  });
   registerOverlaySettings({ onSwitch: onOverlaySwitch, onPreference: onOverlayPreference });
   registerStreamDeckSettings(onStreamDeckChange);
   registerVariableSettings(launcher(menus.variables), launcher(menus.macroArguments));

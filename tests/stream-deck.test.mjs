@@ -600,8 +600,8 @@ test("the real Stream Deck panel template is localized and escapes generated key
     const handlebars = Handlebars.create(); handlebars.registerHelper("localize", key => copy[key] ?? key);
     const html = handlebars.compile(source)({ enabled: false, url: "ws://localhost:19114/jdr-ninja", status: "<script>", generated: '"<script>' });
     assert(!html.includes("JDRNINJA.")); assert(!html.includes("<script>"));
-    assert(html.includes('name="streamDeckEnabled" type="checkbox"'));
-    assert(!html.includes('type="checkbox" checked'));
+    // The switch lives in Connections only.
+    assert(!html.includes("streamDeckEnabled"));
     assert(html.includes('name="streamDeckKey" type="password"'));
   }
 });

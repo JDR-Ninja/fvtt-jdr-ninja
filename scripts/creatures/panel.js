@@ -1,30 +1,21 @@
-import { MODULE_ID, I18N, SUBSCRIPTIONS_URL } from "../constants.js";
+import { MODULE_ID, I18N } from "../constants.js";
 import { creatureClient } from "./api.js";
 import { OPTION_FIELDS, optionErrors, CreatureError } from "./contract.js";
 import { importCreature } from "./import.js";
 import { compatibilityContext } from "./compatibility.js";
+import { creatureState, windowState, control, subscriptionsUrl } from "../ui/states.js";
+import { openSingleton, releaseSingleton } from "../ui/window.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
-export const CT = key => game.i18n.localize(`${I18N}.creatures.${key}`);
-export const creatureMessage = code => CT(`error.${code}`);
+const CT = key => game.i18n.localize(`${I18N}.creatures.${key}`);
+const creatureMessage = code => CT(`error.${code}`);
 const primaryNpc = new Set(["presetId", "speciesId", "challengeRating", "nameGeneratorId"]);
-
-/** The pill level of every state is derived here, so the template only renders the level it receives. */
-export const PILL_ICONS = Object.freeze({ success: "fa-circle-check", warning: "fa-triangle-exclamation", error: "fa-circle-xmark",
-  info: "fa-circle-info", neutral: "fa-circle-minus" });
-const COMPATIBILITY_LEVELS = Object.freeze({ compatible: "success", versionUnsupported: "warning", dndRequired: "error" });
-const ACCESS_LEVELS = Object.freeze({ available: "success", checking: "info", notChecked: "neutral" });
-/** Compatible is success, an untested version warns, another game system cannot import at all. */
-export const compatibilityLevel = code => COMPATIBILITY_LEVELS[code] ?? "neutral";
 /**
- * A clean access state is a pill. Anything else is a message (a restriction, a denial or a failure): it shows once as a
- * notice, and the last failure keeps its own alert instead of repeating here.
+ * Refusals of a generation that also withdraw the access (`CreatureClient.call`): the status line reports them like those
+ * of the access check, with the state it gives each.
  */
-export function accessStatus(access, failure = "") {
-  const level = ACCESS_LEVELS[access];
-  if (level) return { pill: { level, icon: access === "checking" ? "fa-spinner fa-spin" : PILL_ICONS[level], label: CT(`status.${access}`) }, message: "" };
-  return { pill: null, message: access === failure ? "" : creatureMessage(access) };
-}
+const ACCESS_REFUSALS = Object.freeze({ tierRequired: "tierRequired", devicePermissionRequired: "devicePermissionRequired",
+  unauthorized: "attention", wrongDeviceKind: "attention" });
 
 export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   static instances = new Set();
@@ -33,15 +24,12 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   /** One window per generator: the settings menu, the Actors shortcuts, Connections and the API reuse it. */
   static open() {
     if (game.user?.isGM !== true) { ui.notifications.warn(creatureMessage("notGM")); return null; }
-    const panel = this.instance ??= new this();
-    if (!panel.rendered) panel.render({ force: true });
-    else { if (panel.minimized) void panel.maximize(); panel.bringToFront(); }
-    return panel;
+    return openSingleton(this);
   }
   static DEFAULT_OPTIONS = {
     id: "jdr-ninja-creatures", classes: ["jdr-ninja", "jdr-ninja-creatures"], tag: "div",
     window: { title: `${I18N}.creatures.monster`, icon: "fa-solid fa-dragon", resizable: true },
-    position: { width: 740, height: 760 },
+    position: { width: 760, height: 760 },
     actions: {
       check: CreaturePanel.prototype._load,
       generate: CreaturePanel.prototype._generate,
@@ -57,7 +45,11 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   _catalog = null;
   _options = {};
   _controller = null;
+  /** The failure of a generation or a creation, shown as an alert; the access and options failure of `_load` is `_loadError`. */
   _error = "";
+  _loadError = "";
+  /** True only while the access and the options load: a generation in progress is not a verification. */
+  _loading = false;
   _fieldErrors = [];
   _preview = null;
   _previewState = null;
@@ -69,6 +61,26 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   _epoch = 0;
   _timer = null;
   get kind() { return this.constructor.KIND; }
+
+  /**
+   * The line above the form, or null while everything works: a system that cannot import, a connection that blocks the
+   * generators, a verification in progress, or the failure of the access check or of the options load. A failed
+   * generation or creation keeps its own alert, except a refusal of the access (subscription, permission, connection):
+   * the line reports that one, since it withdrew the access. A failure of the load wins over a grant seen elsewhere,
+   * since the options it needs are missing, while a grant seen after a refusal of a generation wins over that refusal;
+   * a window that is about to load already reads as checking.
+   */
+  _status(restriction) {
+    const refusal = this._refusal();
+    const failure = this._loadError ? { ok: false, reason: this._loadError } : refusal ? { ok: false, reason: refusal } : null;
+    const row = creatureState({ compatibility: compatibilityContext(), restriction, access: this._loadError ? null : creatureClient.access,
+      result: failure, checking: this._loading || !this._initialized });
+    const retry = control("check", game.i18n.localize(`${I18N}.button.retry`), "fa-rotate");
+    const status = windowState(row, { retry });
+    return status.state === "available" ? null : status;
+  }
+  /** The refusal of the access that ended the last generation or creation, unless the failure of the load already speaks. */
+  _refusal() { return !this._loadError && Object.hasOwn(ACCESS_REFUSALS, this._error) ? this._error : ""; }
 
   async _prepareContext() {
     const restriction = creatureClient.local();
@@ -89,7 +101,9 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
       };
     }) : [];
     const delay = Math.ceil(creatureClient.remainingDelay() / 1000);
-    const access = restriction ?? (this._controller ? "checking" : this._error || (creatureClient.access?.allowed ? "available" : creatureClient.access?.reason || "notChecked"));
+    const status = this._status(restriction);
+    // The status line reports a refusal of the access once: the alert does not repeat it.
+    const refusal = this._refusal(), reported = Boolean(refusal && status?.state === ACCESS_REFUSALS[refusal]);
     const preview = this._preview ? {
       name: this._preview.source.name, biography: this._preview.source.biography,
       entries: Object.values(this._preview.source.entries),
@@ -97,11 +111,10 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
       summary: this._preview.source.records.find(row => row.type === "actor"),
       changed: Object.keys(this._options).some(key => this._preview.requestedOptions[key] !== this._options[key]),
     } : null;
-    const compatibility = compatibilityContext(), level = compatibilityLevel(compatibility.code);
-    return { kind: this.kind, title: CT(this.kind), compatibility: { ...compatibility, level, icon: PILL_ICONS[level] }, enabled: creatureClient.enabled(), busy: Boolean(this._controller),
-      subscriptionsUrl: SUBSCRIPTIONS_URL, showSubscriptionLink: creatureClient.needsSubscription(this._error),
-      status: accessStatus(access, this._error),
-      error: this._error ? creatureMessage(this._error) : "", delay, cooldown: delay > 0,
+    // A denied generation offers the subscriptions link below its alert, unless the status line already offers it.
+    return { kind: this.kind, title: CT(this.kind), enabled: creatureClient.enabled(), busy: Boolean(this._controller),
+      status, showSubscriptionLink: this._error === "tierRequired" && !status?.step?.link, subscriptionsUrl: subscriptionsUrl("creatures"),
+      error: this._error && !reported ? creatureMessage(this._error) : "", delay, cooldown: delay > 0,
       cooldownText: game.i18n.format(`${I18N}.creatures.cooldown`, { seconds: delay }),
       primaryFields: fields.filter(field => !field.advanced), advancedFields: fields.filter(field => field.advanced),
       hasAdvanced: fields.some(field => field.advanced), advanced: this._advanced, hasCatalog: Boolean(this._catalog),
@@ -132,11 +145,13 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
     if (name) this._name = name.value;
     if (folder) this._folder = folder.value;
   }
-  async _run(action) {
+  async _run(action, { load = false } = {}) {
     if (this._controller) return;
     this._read();
     const controller = this._controller = new AbortController(), epoch = this._epoch, state = creatureClient.capture();
     this._error = ""; this._fieldErrors = [];
+    this._loading = load;
+    if (load) this._loadError = "";
     try {
       await this.render();
       if (controller.signal.aborted) return;
@@ -144,11 +159,13 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
       if (!controller.signal.aborted && epoch === this._epoch) { creatureClient.assertCurrent(state); apply?.(); }
     } catch (error) {
       if (!controller.signal.aborted && epoch === this._epoch) {
-        this._error = error instanceof CreatureError ? error.code : "invalidResponse";
+        const code = error instanceof CreatureError ? error.code : "invalidResponse";
+        // The access check and the options load report on the status line, a generation or a creation in an alert.
+        if (load) this._loadError = code; else this._error = code;
         this._fieldErrors = error.fields ?? [];
       }
     } finally {
-      if (this._controller === controller) this._controller = null;
+      if (this._controller === controller) { this._controller = null; this._loading = false; }
       if (this.rendered) await this.render();
     }
   }
@@ -161,7 +178,7 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
         // Catalog refresh never rewrites an explicit FP or another existing selection.
         this._options = { ...data.defaults, ...this._options };
       };
-    });
+    }, { load: true });
   }
   _generate() {
     return this._run(async (signal, state) => {
@@ -186,16 +203,16 @@ export class CreaturePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   /** The module API opens the `ConnectionPanel.open()` singleton (an import would be circular). */
   _connections() { return game.modules.get(MODULE_ID)?.api?.openConnections(); }
   invalidate() {
-    this._epoch++; this._controller?.abort(); this._controller = null;
+    this._epoch++; this._controller?.abort(); this._controller = null; this._loading = false;
     this._catalog = null; this._preview = null; this._previewState = null; this._actor = null;
-    this._error = ""; this._initialized = false;
+    this._error = ""; this._loadError = ""; this._initialized = false;
     if (this.rendered) this.render();
   }
   async close(options) {
     this._epoch++; this._controller?.abort(); clearTimeout(this._timer);
     this._preview = null;
     CreaturePanel.instances.delete(this);
-    if (this.constructor.instance === this) this.constructor.instance = null;
+    releaseSingleton(this);
     return super.close(options);
   }
 }
@@ -208,5 +225,5 @@ export class NpcGeneratorPanel extends CreaturePanel {
   static instance = null;
   static KIND = "npc";
   static DEFAULT_OPTIONS = { ...CreaturePanel.DEFAULT_OPTIONS, id: "jdr-ninja-npcs",
-    window: { ...CreaturePanel.DEFAULT_OPTIONS.window, title: `${I18N}.creatures.npc`, icon: "fa-solid fa-user" } };
+    window: { ...CreaturePanel.DEFAULT_OPTIONS.window, title: `${I18N}.creatures.npc`, icon: "fa-solid fa-masks-theater" } };
 }

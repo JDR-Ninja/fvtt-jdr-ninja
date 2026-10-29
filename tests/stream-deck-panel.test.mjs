@@ -8,6 +8,7 @@ class Application {
   rendered = true;
   async render() { return this; }
   async close() { this.rendered = false; return this; }
+  bringToFront() { this.brought = true; }
   _onRender() {}
 }
 globalThis.foundry = { applications: { api: { ApplicationV2: Application, HandlebarsApplicationMixin: base => base } } };
@@ -17,37 +18,77 @@ const { StreamDeckPanel, STREAM_DECK_LEVELS, streamDeckPill, paintStreamDeckPill
 const pillElement = () => ({ className: "", icon: { className: "" }, text: { textContent: "" },
   querySelector(selector) { return selector === "[data-pill-icon]" ? this.icon : this.text; } });
 
-function fixture() {
-  const settings = { streamDeckEnabled: true, streamDeckUrl: "ws://127.0.0.1:19114/jdr-ninja", streamDeckKey: "a".repeat(64) };
+function fixture({ enabled = true } = {}) {
+  const settings = { streamDeckEnabled: enabled, streamDeckUrl: "ws://127.0.0.1:19114/jdr-ninja", streamDeckKey: "a".repeat(64) };
   const writes = [];
   globalThis.game = { user: { isGM: false }, i18n: { localize: key => key }, settings: {
     get: (_module, key) => settings[key], set: async (_module, key, value) => { writes.push([key, value]); settings[key] = value; },
   } };
   const panel = new StreamDeckPanel();
   const fields = { streamDeckUrl: { value: "wss://localhost:19114/jdr-ninja" }, streamDeckKey: { value: "b".repeat(64) },
-    streamDeckEnabled: { addEventListener() {} }, status: pillElement(), error: {} };
+    status: pillElement(), error: {} };
   panel.element = { querySelector: selector => selector === "[data-stream-deck-status]" ? fields.status
     : selector === "[data-stream-deck-error]" ? fields.error
     : fields[/name="([^"]+)"/.exec(selector)?.[1]] };
   return { panel, fields, settings, writes };
 }
 
-test("saving bridge settings disables consent before changing the endpoint/key, even for a player", async () => {
+test("saving switches consent off while the endpoint and key change, then on: the click is the explicit consent, even for a player", async () => {
   const f = fixture(); await f.panel._save();
   assert.deepEqual(f.writes, [["streamDeckEnabled", false], ["streamDeckKey", ""],
-    ["streamDeckUrl", "wss://localhost:19114/jdr-ninja"], ["streamDeckKey", "b".repeat(64)]]);
+    ["streamDeckUrl", "wss://localhost:19114/jdr-ninja"], ["streamDeckKey", "b".repeat(64)], ["streamDeckEnabled", true]]);
   const context = await f.panel._prepareContext();
-  assert.equal(context.enabled, false); assert.equal(context.configured, true);
+  assert.equal(context.enabled, true); assert.equal(context.configured, true);
   assert(!JSON.stringify(context).includes("b".repeat(64)));
 });
 
-test("invalid endpoint/key never changes saved configuration or consent", async () => {
-  const f = fixture(); f.fields.streamDeckUrl.value = "wss://example.com/jdr-ninja";
-  await f.panel._save(); assert.equal(f.writes.length, 0);
-  assert.equal(f.panel._error, "JDRNINJA.streamDeck.error.invalidEndpoint");
-  f.fields.streamDeckUrl.value = f.settings.streamDeckUrl; f.fields.streamDeckKey.value = "short";
-  await f.panel._save(); assert.equal(f.writes.length, 0);
-  assert.equal(f.panel._error, "JDRNINJA.streamDeck.error.invalidKey");
+test("saving a Stream Deck switched off elsewhere, with nothing typed, saves the stored key again and switches it on", async () => {
+  const f = fixture({ enabled: false });
+  f.fields.streamDeckKey.value = ""; f.fields.streamDeckUrl.value = f.settings.streamDeckUrl;
+  await f.panel._save();
+  assert.deepEqual(f.writes, [["streamDeckEnabled", false], ["streamDeckKey", ""],
+    ["streamDeckUrl", "ws://127.0.0.1:19114/jdr-ninja"], ["streamDeckKey", "a".repeat(64)], ["streamDeckEnabled", true]]);
+  assert.equal(f.settings.streamDeckEnabled, true);
+  assert.equal(f.panel._error, "");
+});
+
+test("saving uses a generated key before the stored one, and forgets it once saved", async () => {
+  const f = fixture({ enabled: false });
+  f.fields.streamDeckKey.value = ""; f.panel._generated = "c".repeat(64);
+  await f.panel._save();
+  assert.deepEqual(f.writes.map(([key]) => key), ["streamDeckEnabled", "streamDeckKey", "streamDeckUrl", "streamDeckKey", "streamDeckEnabled"]);
+  assert.deepEqual(f.writes[3], ["streamDeckKey", "c".repeat(64)]);
+  assert.deepEqual(f.writes[4], ["streamDeckEnabled", true]);
+  assert.equal(f.panel._generated, "");
+});
+
+test("invalid endpoint/key never changes saved configuration or consent, off or on", async () => {
+  for (const enabled of [true, false]) {
+    const f = fixture({ enabled }); f.fields.streamDeckUrl.value = "wss://example.com/jdr-ninja";
+    await f.panel._save(); assert.equal(f.writes.length, 0);
+    assert.equal(f.panel._error, "JDRNINJA.streamDeck.error.invalidEndpoint");
+    f.fields.streamDeckUrl.value = f.settings.streamDeckUrl; f.fields.streamDeckKey.value = "short";
+    await f.panel._save(); assert.equal(f.writes.length, 0);
+    assert.equal(f.panel._error, "JDRNINJA.streamDeck.error.invalidKey");
+    assert.equal(f.settings.streamDeckEnabled, enabled);
+  }
+  // No key anywhere: nothing typed, nothing generated, nothing saved.
+  const empty = fixture({ enabled: false }); empty.settings.streamDeckKey = ""; empty.fields.streamDeckKey.value = "";
+  await empty.panel._save(); assert.equal(empty.writes.length, 0);
+  assert.equal(empty.panel._error, "JDRNINJA.streamDeck.error.invalidKey");
+});
+
+test("the window is 600 wide, reuses its one instance and forgets it when closed", async () => {
+  assert.equal(StreamDeckPanel.DEFAULT_OPTIONS.position.width, 600);
+  fixture(); StreamDeckPanel.instance = null;
+  const first = StreamDeckPanel.open();
+  assert(first instanceof StreamDeckPanel && StreamDeckPanel.instance === first);
+  first.brought = false;
+  assert.equal(StreamDeckPanel.open(), first); assert.equal(first.brought, true);
+  await first.close(); assert.equal(StreamDeckPanel.instance, null);
+  const second = StreamDeckPanel.open();
+  assert.notEqual(second, first);
+  await second.close(); assert.equal(StreamDeckPanel.instance, null);
 });
 
 test("live status updates repaint the pill but do not erase unsaved endpoint/key edits, and closing unsubscribes", async () => {
@@ -139,7 +180,10 @@ test("the Stream Deck window renders every locale with its hooks, one primary ac
   for (const locale of ["en", "fr", "es", "de", "it"]) {
     const { html, copy } = await renderTemplate(locale);
     assert(!html.includes("JDRNINJA."), `${locale}: unresolved locale key`);
-    for (const hook of ['name="streamDeckEnabled"', 'name="streamDeckUrl"', 'name="streamDeckKey"', "data-stream-deck-status", "data-stream-deck-error"]) assert(html.includes(hook), hook);
+    for (const hook of ['name="streamDeckUrl"', 'name="streamDeckKey"', "data-stream-deck-status", "data-stream-deck-error"]) assert(html.includes(hook), hook);
+    // The switch lives in Connections only: no enabling control, no checkbox, nothing of its label or its tooltip here.
+    assert(!html.includes("streamDeckEnabled") && !html.includes("jdr-stream-deck-enabled") && !html.includes('type="checkbox"'), locale);
+    assert(!("JDRNINJA.streamDeck.enable" in copy) && !html.includes(escaped(copy["JDRNINJA.streamDeck.enableHint"])), locale);
     // The window frame: content that scrolls, a footer that stays, no frame in a frame.
     assert(html.includes('class="standard-form jn-layout') && html.includes('<div class="jn-scroll">'));
     assert(!html.includes("<fieldset") && !html.includes("<legend") && !html.includes('class="badge'));
@@ -159,16 +203,18 @@ test("the Stream Deck window renders every locale with its hooks, one primary ac
     assert(generate.includes(`aria-label="${escaped(copy["JDRNINJA.streamDeck.generate"])}"`), generate);
     assert(generate.includes(`data-tooltip="${escaped(copy["JDRNINJA.streamDeck.generate"])}"`), generate);
     assert(html.indexOf('name="streamDeckKey"') < html.indexOf('data-action="generate"') && html.indexOf('data-action="generate"') < html.indexOf("</section>"));
-    // The state is a pill with an icon and its text, announced politely; the error keeps its alert role.
-    assert(/aria-live="polite">\s*<span class="jn-pill jn-pill--success" data-stream-deck-status><i class="fa-solid fa-circle-check" aria-hidden="true" data-pill-icon><\/i><span data-pill-text>/.test(html), locale);
-    assert(/<p class="notice notice-error" role="alert" data-stream-deck-error hidden>/.test(html));
-    // The switch hint and the address detail are tooltips on focusable icons; the one note replaces the two paragraphs.
-    for (const key of ["enableHint", "urlDetail"]) {
-      const tooltip = escaped(copy[`JDRNINJA.streamDeck.${key}`]);
-      assert(html.includes(`tabindex="0" role="img" aria-label="${tooltip}" data-tooltip="${tooltip}"`), key);
-    }
-    assert(!html.includes(`<p class="hint">${escaped(copy["JDRNINJA.streamDeck.enableHint"])}</p>`));
-    assert.equal((html.match(/jdr-ninja__note/g) ?? []).length, 1);
+    // The status line comes first: the live pill with its icon and its text, announced politely, then the error, which keeps its alert role.
+    const line = /<div class="jn-status-line">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
+    assert(html.indexOf('<div class="jn-status-line">') < html.indexOf('<section class="jn-section">'), locale);
+    assert(/aria-live="polite">\s*<span class="jn-pill jn-pill--success" data-stream-deck-status><i class="fa-solid fa-circle-check" aria-hidden="true" data-pill-icon><\/i><span data-pill-text>/.test(line), locale);
+    assert(/<p class="notice notice-error" role="alert" data-stream-deck-error hidden>/.test(line));
+    assert(line.indexOf("data-stream-deck-status") < line.indexOf("data-stream-deck-error"), locale);
+    assert.equal((html.match(/data-stream-deck-status/g) ?? []).length, 1);
+    assert.equal((html.match(/data-stream-deck-error/g) ?? []).length, 1);
+    // The address detail is a tooltip on a focusable icon; the one note replaces the two paragraphs.
+    const tooltip = escaped(copy["JDRNINJA.streamDeck.urlDetail"]);
+    assert(html.includes(`tabindex="0" role="img" aria-label="${tooltip}" data-tooltip="${tooltip}"`), locale);
+    assert.equal((html.match(/jn-note/g) ?? []).length, 1);
     assert(html.includes(escaped(copy["JDRNINJA.streamDeck.note"])));
     assert(html.includes(escaped(copy["JDRNINJA.streamDeck.keyHint"])));
     // Every field is labelled and its hint is attached to it.
@@ -189,12 +235,17 @@ test("the new key shows only once generated, read-only and with its own label, a
   // Nothing can be changed while an operation runs, and reconnecting needs the switch on, disconnecting a saved key.
   const busy = await renderTemplate("en", { busy: true });
   for (const action of ["save", "reconnect", "disconnect", "generate"]) assert(new RegExp(`data-action="${action}"[^>]*disabled`).test(busy.html), action);
-  assert(/name="streamDeckEnabled" type="checkbox"[^>]*disabled/.test(busy.html));
+  for (const field of ["streamDeckUrl", "streamDeckKey"]) assert(new RegExp(`name="${field}"[^>]*disabled`).test(busy.html), field);
+  // Stream Deck switched off (from Connections): the primary button stays usable, it saves and switches it back on.
   const off = await renderTemplate("en", { enabled: false, configured: false });
   assert(/data-action="reconnect" disabled/.test(off.html));
   assert(/data-action="disconnect" disabled/.test(off.html));
   assert(!/data-action="save"[^>]*disabled/.test(off.html));
-  assert(!/name="streamDeckEnabled" type="checkbox" checked/.test(off.html));
+  const savedOff = await renderTemplate("en", { enabled: false, configured: true });
+  assert(/data-action="reconnect" disabled/.test(savedOff.html));
+  assert(!/data-action="disconnect"[^>]*disabled/.test(savedOff.html));
+  assert(!/data-action="save"[^>]*disabled/.test(savedOff.html));
+  assert(!off.html.includes("streamDeckEnabled") && !busy.html.includes("streamDeckEnabled"));
 });
 
 test("the Variables and macros shortcuts sit between the local connection and the note, in every locale, and stay usable while busy", async () => {
@@ -205,19 +256,22 @@ test("the Variables and macros shortcuts sit between the local connection and th
       assert.equal(sections.length, 2, locale);
       const [connection, shortcuts] = sections;
       assert(connection.includes('name="streamDeckUrl"') && !connection.includes("openVariables"), locale);
-      // Same title markup as the local connection, with its own icon and a title of its own.
+      // Same title markup as the local connection, with its own icon (the layers, not either button's icon) and a title of its own.
       const title = copy["JDRNINJA.streamDeck.variables"];
       assert(title && title !== copy["JDRNINJA.streamDeck.connection"], locale);
-      assert(shortcuts.includes(`<h3 class="jn-section__title"><i class="fa-solid fa-code" aria-hidden="true"></i>${escaped(title)}</h3>`), locale);
+      assert(shortcuts.includes(`<h3 class="jn-section__title"><i class="fa-solid fa-layer-group" aria-hidden="true"></i>${escaped(title)}</h3>`), locale);
       assert(shortcuts.includes(`<p class="hint">${escaped(copy["JDRNINJA.variables.menu.hint"])}</p>`), locale);
       // Two secondary buttons in a toolbar: no class, never disabled (they open other windows, they do not touch the connection).
       const toolbar = /<div class="jn-toolbar">([\s\S]*?)<\/div>/.exec(shortcuts)?.[1] ?? "";
       const buttons = [...toolbar.matchAll(/<button[^>]*>[\s\S]*?<\/button>/g)].map(match => match[0]);
+      // Variables take the sliders and macros the code icon, with the short names of the section: the « (avancé) » stays in their own windows.
+      for (const key of ["openVariables", "openMacros"]) assert(copy[`JDRNINJA.streamDeck.${key}`], `${locale} ${key}`);
       assert.deepEqual(buttons, [
-        `<button type="button" data-action="openVariables"><i class="fa-solid fa-code" aria-hidden="true"></i> ${escaped(copy["JDRNINJA.variables.menu.variables"])}</button>`,
-        `<button type="button" data-action="openMacroArguments"><i class="fa-solid fa-terminal" aria-hidden="true"></i> ${escaped(copy["JDRNINJA.variables.menu.macroArguments"])}</button>`,
+        `<button type="button" data-action="openVariables"><i class="fa-solid fa-sliders" aria-hidden="true"></i> ${escaped(copy["JDRNINJA.streamDeck.openVariables"])}</button>`,
+        `<button type="button" data-action="openMacroArguments"><i class="fa-solid fa-code" aria-hidden="true"></i> ${escaped(copy["JDRNINJA.streamDeck.openMacros"])}</button>`,
       ], `${locale} busy=${busy}`);
-      assert(html.indexOf(connection) < html.indexOf(shortcuts) && html.indexOf(shortcuts) < html.indexOf('class="hint jdr-ninja__note"'), locale);
+      assert(!toolbar.includes("fa-terminal"), locale);
+      assert(html.indexOf(connection) < html.indexOf(shortcuts) && html.indexOf(shortcuts) < html.indexOf('class="hint jn-note"'), locale);
       assert(html.indexOf(shortcuts) < html.indexOf('<footer class="form-footer jn-footer">'), locale);
       assert.equal((html.match(/class="bright"/g) ?? []).length, 1, locale);
     }

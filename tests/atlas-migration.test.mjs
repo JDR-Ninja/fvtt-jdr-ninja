@@ -7,7 +7,7 @@ import { checkLegacyMigration, MIGRATION_SETTING } from "../scripts/atlas/legacy
 const copy = JSON.parse(await readFile(new URL("../lang/fr.json", import.meta.url), "utf8"));
 const IMPORTED = copy["JDRNINJA.atlas.migrationImported"];
 const ENABLE = copy["JDRNINJA.atlas.migrationEnable"];
-const LEGACY_ACTIVE = copy["JDRNINJA_ATLAS_SYNC.status.LEGACY_MODULE_ACTIVE"];
+const LEGACY_ACTIVE = copy["JDRNINJA.atlas.status.LEGACY_MODULE_ACTIVE"];
 let settings, legacy, writes, notices;
 
 /** The old module's world settings, as Setting documents that no registration parses for us. */

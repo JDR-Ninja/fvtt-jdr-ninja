@@ -3,6 +3,7 @@ import { ControlError, requireValue } from "../stream-deck/protocol.js";
 import { variableService } from "./service.js";
 import { VALUE_TYPES, DOCUMENT_TYPES, SCOPES, copy, uuid7, operations, preview } from "./schema.js";
 import { parseExpression, formatExpression, inspectExpression, expressionReferences } from "./expressions.js";
+import { openSingleton, releaseSingleton } from "../ui/window.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 export const VT = key => game.i18n.localize(`${I18N}.variables.${key}`);
@@ -34,14 +35,9 @@ export function dependencies(stores, scope, collection, id) {
   return rows;
 }
 export class VariablePanel extends HandlebarsApplicationMixin(ApplicationV2) {
-  static _instance = null;
+  static instance = null;
   /** One window: the settings menu and the module API reuse it, and a reopen never redraws a draft. */
-  static open() {
-    const panel = this._instance ??= new this();
-    if (!panel.rendered) panel.render({ force: true });
-    else { if (panel.minimized) void panel.maximize(); panel.bringToFront(); }
-    return panel;
-  }
+  static open() { return openSingleton(this); }
   static DEFAULT_OPTIONS = { id: "jdr-ninja-variables", classes: ["jdr-ninja"], tag: "div",
     window: { title: `${I18N}.variables.title`, icon: "fa-solid fa-sliders", resizable: true }, position: { width: 920, height: 720 },
     actions: Object.fromEntries(["scope", "switchTab", "select", "create", "save", "reload", "duplicate", "remove", "preview", "mutate", "entryAdd", "entryRemove", "entryUp", "entryDown", "insert", "openDocument", "controller", "reconcile"]
@@ -54,7 +50,7 @@ export class VariablePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   readableScopes() { return SCOPES.filter(s => this.scope !== "world" || s === "world"); }
   async _prepareContext() {
     try { this.stores = variableService.stores(); this.projection = await variableService.projection(); }
-    catch (error) { const message = variableError(error); return { error: message, advanced: VT("advanced"), layout: JSON.stringify(["error", message]) }; }
+    catch (error) { const message = variableError(error); return { error: message, layout: JSON.stringify(["error", message]) }; }
     const store = this.stores[this.scope], writable = variableService.canWrite(this.scope, this.stores), search = this.search.toLocaleLowerCase();
     // Every row is drawn and the search only hides rows, so the layout below never depends on the search text.
     const rows = store[this.collection].map(v => {
@@ -328,7 +324,7 @@ export class VariablePanel extends HandlebarsApplicationMixin(ApplicationV2) {
   async close(options) {
     if (this.dirty && !await DialogV2.confirm({ window: { title: VT("discardTitle") }, content: VT("discard") })) return this;
     this.unsubscribe?.(); this.unsubscribe = null;
-    if (VariablePanel._instance === this) VariablePanel._instance = null;
+    releaseSingleton(this);
     return super.close(options);
   }
 }

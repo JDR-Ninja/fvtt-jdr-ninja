@@ -49,7 +49,7 @@ for (const source of [...await sources(join(root, "scripts")), ...await sources(
   for (const match of source.matchAll(/text\("([\w.]+)"\)/g)) assert(keys.includes(`${I18N}.${match[1]}`));
   for (const match of source.matchAll(/VT\("([\w.]+)"\)/g)) assert(keys.includes(`${I18N}.variables.${match[1]}`));
   for (const match of source.matchAll(/MT\("([\w.]+)"/g)) assert(keys.includes(`${I18N}.maps.${match[1]}`), match[1]);
-  const prefix = source.includes("${I18N}.overlay.") ? `${I18N}.overlay` : "JDRNINJA_ATLAS_SYNC";
+  const prefix = source.includes("${I18N}.overlay.") ? `${I18N}.overlay` : `${I18N}.atlas`;
   for (const match of source.matchAll(/(?:L|Fmt)\("([\w.]+)"/g)) assert(keys.includes(`${prefix}.${match[1]}`), match[1]);
   assert(!/(?<![.\w])(?:(?:window|globalThis)\.)?(?:alert|confirm|prompt)\s*\(/.test(source), "Native browser dialog");
 }

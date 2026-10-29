@@ -16,7 +16,8 @@ class Application {
 globalThis.foundry = { applications: { api: { ApplicationV2: Application, HandlebarsApplicationMixin: base => base } } };
 globalThis.game = { ...gameFixture(), i18n: { localize: key => key, format: key => key }, folders: { contents: [] } };
 globalThis.ui = { notifications: { warn() {} } };
-const { MonsterGeneratorPanel, NpcGeneratorPanel, CreaturePanel, compatibilityLevel, accessStatus, PILL_ICONS } = await import("../scripts/creatures/panel.js");
+const { MonsterGeneratorPanel, NpcGeneratorPanel, CreaturePanel } = await import("../scripts/creatures/panel.js");
+const { PILL_ICONS } = await import("../scripts/ui/states.js");
 const english = JSON.parse(await readFile(new URL("../lang/en.json", import.meta.url), "utf8"));
 
 /** Runs `run` with the English strings, the template compiled and a granted GM, then restores the shared client. */
@@ -59,8 +60,7 @@ test("the two native panels cover all fields, NPC advanced options remain visibl
       const context = await panel._prepareContext(), html = renderer.compile(template)(context);
       assert(!html.includes("JDRNINJA.")); assert(!html.includes("fa-gem"));
       assert(!html.includes('data-jdr-subscriptions='));
-      assert(html.includes('data-compatibility="compatible"'));
-      assert(html.includes(Handlebars.escapeExpression(strings['JDRNINJA.creatures.compatibility.compatible'])));
+      assert(!html.includes("jn-status-line") && context.status === null, "a compatible system with access shows nothing above the form");
       assert(!html.includes('<img')); assert(html.includes("&lt;img"));
       assert(html.includes('data-action="create"')); assert(html.includes('name="challengeRating"'));
       assert(!JSON.stringify(context).includes("fixture-token"));
@@ -85,7 +85,7 @@ test("the window is one layout with a scrolling content and a fixed footer, with
         assert(!html.includes("<fieldset") && !html.includes("<legend"));
         assert(html.indexOf('class="jn-scroll"') < html.indexOf('class="form-footer jn-footer"'));
         assert(!html.slice(0, html.indexOf('<footer')).includes("<button type=\"button\" class=\"bright\""), "the primary action lives in the footer");
-        assert(!html.includes("jdr-ninja__actions"));
+        assert(!html.includes("jn-actions"));
       }
     }
   });
@@ -96,11 +96,11 @@ test("exactly one primary button follows the flow: generate, create, then open t
   await inEnglish(async render => {
     for (const Class of [MonsterGeneratorPanel, NpcGeneratorPanel]) {
       const done = `<span class="jn-pill jn-pill--success" role="status"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> ${english["JDRNINJA.creatures.imported"]}</span>`;
-      // The window's own buttons are listed exactly: the primary one, the secondary ones, and the two header actions.
+      // The window's own buttons are listed exactly: the primary one and the secondary ones. Nothing sits above the form.
       const flow = async (flags, expected, others) => {
         const html = render(await panelWith(Class, flags)._prepareContext());
         assert.deepEqual(bright(html).map(button => button.action), [expected], JSON.stringify(flags));
-        assert.deepEqual(actions(html), [expected, "check", "connections", ...others].sort(), JSON.stringify(flags));
+        assert.deepEqual(actions(html), [expected, ...others].sort(), JSON.stringify(flags));
         return html;
       };
       // Before any preview the one button generates; secondary actions only exist once there is something to dismiss or redo.
@@ -114,7 +114,7 @@ test("exactly one primary button follows the flow: generate, create, then open t
       // A running request still has one primary button, disabled, and a way to cancel.
       const busy = await flow({ preview: true, busy: true }, "create", ["cancel", "dismiss", "generate"]);
       assert(bright(busy)[0].disabled);
-      assert(busy.includes('data-action="dismiss" disabled') && busy.includes('data-action="check" disabled'));
+      assert(busy.includes('data-action="dismiss" disabled'));
       assert(bright(render(await panelWith(Class, { busy: true })._prepareContext()))[0].disabled);
     }
     // Without a catalog (not connected, disabled, no access) the single primary button exists, disabled.
@@ -124,115 +124,281 @@ test("exactly one primary button follows the flow: generate, create, then open t
   });
 });
 
-test("both generators offer the subscription link only after a subscription denial, never as a standing button", async () => {
-  const savedGame = game, savedAccess = creatureClient.access;
-  const strings = JSON.parse(await readFile(new URL('../lang/fr.json', import.meta.url), 'utf8'));
-  const renderer = Handlebars.create(); renderer.registerHelper('localize', key => strings[key] ?? key);
-  const render = renderer.compile(await readFile(new URL('../templates/creatures.hbs', import.meta.url), 'utf8'));
-  try {
-    globalThis.game = { ...gameFixture(), folders: { contents: [] }, i18n: savedGame.i18n };
-    for (const [token, access, error, expected] of [
-      ['', null, '', false], ['fixture-token', null, '', false],
-      ['fixture-token', { entitled: false, reason: 'tierRequired' }, '', true],
-      ['fixture-token', null, 'tierRequired', true],
-      ['fixture-token', { entitled: true, allowed: true }, 'unauthorized', false],
-      ['fixture-token', { entitled: true, allowed: false, reason: 'devicePermissionRequired' }, '', false],
-      ['fixture-token', { entitled: true, allowed: true }, '', false],
-    ]) {
-      game.values.accountToken = token; game.values.creaturesEnabled = false; creatureClient.access = access;
-      for (const Class of [MonsterGeneratorPanel, NpcGeneratorPanel]) {
-        const panel = new Class(); panel._error = error;
-        const context = await panel._prepareContext(), html = render(context);
-        assert.equal(context.showSubscriptionLink, expected);
-        assert.equal(html.includes('data-jdr-subscriptions="creatures"'), expected);
-        assert(!html.includes('data-action="subscription"'));
-        if (expected) assert(html.includes('href="https://www.jdr.ninja/abonnements" target="_blank" rel="noopener noreferrer"'));
-        assert(!JSON.stringify(context).includes('fixture-token'));
+const text = key => english[`JDRNINJA.${key}`];
+const granted = { allowed: true, entitled: true };
+
+test("in the normal state nothing sits above the form: no pill, no system line, no connections or check button", async () => {
+  await inEnglish(async render => {
+    for (const Class of [MonsterGeneratorPanel, NpcGeneratorPanel]) {
+      for (const flags of [{}, { preview: true }, { preview: true, actor: true }, { preview: true, busy: true }]) {
+        const context = await panelWith(Class, flags)._prepareContext(), html = render(context), label = JSON.stringify(flags);
+        assert.equal(context.status, null, label);
+        assert(html.startsWith('<div class="standard-form jn-layout jn-creatures"><div class="jn-scroll"><div class="jn-section jn-creature-options"'), label);
+        assert(!html.slice(0, html.indexOf('class="jn-section jn-creature-options"')).includes("jn-pill"), label);
+        for (const gone of ["jn-status-line", "jn-creature-header", "jn-creature-system", "jn-info", "data-compatibility", 'data-action="check"', 'data-action="connections"']) {
+          assert(!html.includes(gone), `${label} ${gone}`);
+        }
+        // Retired labels may be gone from the locales: only the ones that still exist can be looked for.
+        for (const key of ["creatures.compatibility.compatible", "creatures.status.available", "creatures.connections", "creatures.check", "creatures.error.incompatibleSystem"]) {
+          if (text(key) !== undefined) assert(!html.includes(Handlebars.escapeExpression(text(key))), `${label} ${key}`);
+        }
+        assert.equal(bright(html).length, 1, label);
       }
     }
-  } finally { globalThis.game = savedGame; creatureClient.access = savedAccess; }
+  });
 });
 
-test("compatibility badge distinguishes game systems and untested versions even before enablement, with escaped installed names", async () => {
-  const savedGame = game;
-  const strings = JSON.parse(await readFile(new URL('../lang/fr.json', import.meta.url), 'utf8'));
-  const renderer = Handlebars.create(); renderer.registerHelper('localize', key => strings[key] ?? key);
-  const render = renderer.compile(await readFile(new URL('../templates/creatures.hbs', import.meta.url), 'utf8'));
-  try {
+test("the window takes its labels and states from the shared module: no status or connections copy of its own", async () => {
+  for (const file of ["../scripts/creatures/panel.js", "../templates/creatures.hbs"]) {
+    const source = await readFile(new URL(file, import.meta.url), "utf8");
+    for (const gone of ["creatures.status.checking", "creatures.status.notChecked", "creatures.connections", "creatures.check", "accessStatus", "compatibilityLevel"]) {
+      assert(!source.includes(gone), `${file} ${gone}`);
+    }
+  }
+  const panel = await readFile(new URL("../scripts/creatures/panel.js", import.meta.url), "utf8");
+  assert(panel.includes('from "../ui/states.js"') && panel.includes('from "../ui/window.js"'));
+});
+
+test("an incompatible system or an untested version is the status line, with its pill, its sentence and its reason, and no button", async () => {
+  await inEnglish(async render => {
+    const base = game;
     for (const [system, core, code, level] of [
-      [{ id: 'dnd5e', version: '5.3.3' }, 14, 'compatible', 'success'],
-      [{ id: 'pf2e', title: '<img src=x>', version: '5.3.3' }, 14, 'dndRequired', 'error'],
-      [{ id: 'dnd5e', version: '5.3.4' }, 14, 'versionUnsupported', 'warning'],
-      [{ id: 'dnd5e', version: '5.3.3' }, 15, 'versionUnsupported', 'warning'],
-      [null, undefined, 'dndRequired', 'error'],
+      [{ id: "pf2e", title: "<img src=x>", version: "5.3.3" }, 14, "dndRequired", "error"],
+      [{ id: "dnd5e", version: "5.3.4" }, 14, "versionUnsupported", "warning"],
+      [{ id: "dnd5e", version: "5.3.3" }, 15, "versionUnsupported", "warning"],
+      [null, undefined, "dndRequired", "error"],
     ]) {
-      globalThis.game = { ...gameFixture(), system, release: { generation: core }, folders: { contents: [] },
-        i18n: { localize: key => strings[key] ?? key, format: (key, values) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, value), strings[key] ?? key) } };
-      game.values.creaturesEnabled = false;
+      globalThis.game = { ...base, system, release: { generation: core } };
       for (const Class of [MonsterGeneratorPanel, NpcGeneratorPanel]) {
-        const context = await new Class()._prepareContext(), html = render(context);
-        assert.equal(context.compatibility.code, code); assert.equal(context.enabled, false);
-        assert.equal(context.compatibility.level, level); assert.equal(context.compatibility.icon, PILL_ICONS[level]);
-        assert(!context.canGenerate); assert(!context.canCreate);
-        assert(html.includes(`data-compatibility="${code}"`));
-        assert(html.includes(`class="jn-pill jn-pill--${level}" role="status" data-compatibility="${code}"`));
-        assert(html.includes(`fa-solid ${PILL_ICONS[level]}`), "the level also shows as an icon");
-        assert(html.includes(Handlebars.escapeExpression(strings[`JDRNINJA.creatures.compatibility.${code}`])));
-        assert(html.includes(Handlebars.escapeExpression(strings['JDRNINJA.creatures.compatibility.current'].split('{')[0])));
-        assert(!html.includes('<img')); assert(!html.includes('JDRNINJA.'));
+        const context = await panelWith(Class)._prepareContext(), html = render(context), { status } = context;
+        assert.equal(status.state, "incompatible", code);
+        assert.deepEqual([status.pill.level, status.pill.icon, status.pill.label], [level, PILL_ICONS[level], text(`creatures.compatibility.${code}`)]);
+        assert(html.includes(`<div class="jn-status-line" data-status="incompatible"><span class="jn-pill jn-pill--${level}" role="status"><i class="fa-solid ${PILL_ICONS[level]}" aria-hidden="true"></i> ${Handlebars.escapeExpression(text(`creatures.compatibility.${code}`))}</span>`), "the level also shows as an icon");
+        assert(html.includes(`<div class="notice notice-${level}"><p role="${level === "error" ? "alert" : "status"}">${Handlebars.escapeExpression(status.step.text)}</p>`));
+        assert(status.step.text.startsWith(text("creatures.compatibility.current").split("{")[0]));
+        assert(html.includes(`<p>${Handlebars.escapeExpression(text("creatures.error.incompatibleSystem"))}</p>`), "the reason follows as the detail");
+        assert.equal(status.step.action, undefined); assert(!html.includes('data-action="check"') && !html.includes('data-action="connections"'));
+        assert(!html.includes("<img")); assert(!context.canGenerate); assert(!context.canCreate);
         assert.equal(bright(html).length, 1);
       }
+      if (system?.title) assert((await panelWith(MonsterGeneratorPanel)._prepareContext()).status.step.text.includes("<img src=x>"), "escaped by the template, never by the context");
     }
-  } finally { globalThis.game = savedGame; }
-});
-
-test("pill levels are derived once: compatibility codes and access states each map to a level and an icon", async () => {
-  assert.deepEqual(["compatible", "versionUnsupported", "dndRequired", "unknown"].map(compatibilityLevel), ["success", "warning", "error", "neutral"]);
-  for (const level of ["success", "warning", "error", "info", "neutral"]) assert.match(PILL_ICONS[level], /^fa-[a-z-]+$/);
-  assert.equal(new Set(Object.values(PILL_ICONS)).size, 5, "each level has its own icon, so colour never carries the state alone");
-  await inEnglish(async () => {
-    assert.deepEqual(accessStatus("available"), { pill: { level: "success", icon: "fa-circle-check", label: english["JDRNINJA.creatures.status.available"] }, message: "" });
-    assert.deepEqual(accessStatus("checking"), { pill: { level: "info", icon: "fa-spinner fa-spin", label: english["JDRNINJA.creatures.status.checking"] }, message: "" });
-    assert.deepEqual(accessStatus("notChecked"), { pill: { level: "neutral", icon: "fa-circle-minus", label: english["JDRNINJA.creatures.status.notChecked"] }, message: "" });
-    // A restriction, a denial or a failure is a message, shown once: the last failure keeps its own alert.
-    for (const code of ["disabled", "connectionRequired", "incompatibleSystem", "devicePermissionRequired", "tierRequired"]) {
-      assert.deepEqual(accessStatus(code, "network"), { pill: null, message: english[`JDRNINJA.creatures.error.${code}`] }, code);
-    }
-    assert.deepEqual(accessStatus("network", "network"), { pill: null, message: "" });
+    globalThis.game = base;
+    assert.equal((await panelWith(MonsterGeneratorPanel)._prepareContext()).status, null, "a validated system shows nothing");
   });
 });
 
-test("the access state shows as a pill, and any other state as one notice instead of repeating the failure", async () => {
+test("each state of the status line gives its message and its action, and Configure connections only opens a blocked window", async () => {
   await inEnglish(async render => {
-    const state = async (prepare, access = { allowed: true, entitled: true }) => {
-      creatureClient.access = access;
-      const panel = panelWith(MonsterGeneratorPanel); prepare?.(panel);
-      const context = await panel._prepareContext(); return { context, html: render(context) };
+    const stage = async ({ access = granted, values = {}, prepare, Class = MonsterGeneratorPanel } = {}) => {
+      creatureClient.access = access; Object.assign(game.values, { accountToken: "fixture-token", creaturesEnabled: true }, values);
+      const panel = panelWith(Class); prepare?.(panel);
+      const context = await panel._prepareContext(), html = render(context);
+      assert.equal(html.match(/class="jn-status-line"/g)?.length ?? 0, context.status ? 1 : 0, "one status line at most");
+      return { context, html, status: context.status };
     };
-    const available = await state();
-    assert.equal(available.context.status.pill.level, "success");
-    assert(available.html.includes('<span class="jn-creature-status" aria-live="polite"><span class="jn-pill jn-pill--success"><i class="fa-solid fa-circle-check"'));
-    assert(!available.html.includes("notice-warning") && !available.html.includes('role="alert"'));
-    assert.equal((await state(null, null)).context.status.pill.level, "neutral");
-    assert.equal((await state(panel => { panel._controller = new AbortController(); })).context.status.pill.level, "info");
-    // A failed operation: the alert states it once, the pill leaves room for it and no second notice repeats it.
-    const failed = await state(panel => { panel._error = "network"; });
-    assert.equal(failed.context.status.pill, null); assert.equal(failed.context.status.message, "");
-    assert.equal(failed.html.split(english["JDRNINJA.creatures.error.network"]).length - 1, 1);
-    assert(failed.html.includes('class="notice notice-error" role="alert"')); assert(!failed.html.includes("notice-warning"));
-    // A denial is a warning notice with its message, and the subscription link follows it.
-    const denied = await state(null, { allowed: false, entitled: false, reason: "tierRequired" });
-    assert.equal(denied.context.status.pill, null);
-    assert(denied.html.includes(`<p class="notice notice-warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${english["JDRNINJA.creatures.error.tierRequired"]}</p>`));
-    assert(!denied.html.includes('role="alert"')); assert(denied.html.includes('data-jdr-subscriptions="creatures"'));
-    // A restriction next to a failure: the restriction is the notice and the failure keeps its own alert.
-    game.values.creaturesEnabled = false;
-    const disabled = await state(panel => { panel._error = "network"; });
-    assert.equal(disabled.context.status.pill, null); assert.equal(disabled.context.status.message, english["JDRNINJA.creatures.error.disabled"]);
-    assert(disabled.html.includes("notice-warning")); assert(disabled.html.includes('class="notice notice-error" role="alert"'));
-    assert.equal(disabled.html.split(english["JDRNINJA.creatures.error.network"]).length - 1, 1);
+    const offer = action => action ? [action.name, action.label, action.icon] : null;
+    const connections = ["connections", text("menu.label"), "fa-link"];
+    // A connection blocks the generators: the message says which one, and the one action opens Connections.
+    for (const [state, options, sentence, pill, role] of [
+      ["disabled", { values: { creaturesEnabled: false } }, "notice.disabled", "panel.state.disabled", "status"],
+      ["accountRequired", { values: { accountToken: "" } }, "notice.connectAccount", "panel.state.accountRequired", "status"],
+      ["attention", { prepare: panel => { panel._loadError = "unauthorized"; } }, "notice.reconnectAccount", "panel.state.attention", "status"],
+      ["attention", { prepare: panel => { panel._loadError = "wrongDeviceKind"; } }, "notice.reconnectAccount", "panel.state.attention", "status"],
+      ["devicePermissionRequired", { access: { allowed: false, entitled: true, reason: "devicePermissionRequired" } }, "panel.step.devicePermission", "panel.state.permissionRequired", "status"],
+      ["devicePermissionRequired", { prepare: panel => { panel._loadError = "devicePermissionRequired"; } }, "panel.step.devicePermission", "panel.state.permissionRequired", "status"],
+    ]) {
+      for (const Class of [MonsterGeneratorPanel, NpcGeneratorPanel]) {
+        const { html, status } = await stage({ ...options, Class });
+        assert.equal(status.state, state);
+        assert.equal(status.pill.label, text(pill)); assert.equal(status.step.text, text(sentence)); assert.deepEqual(offer(status.step.action), connections);
+        assert(html.includes(`<div class="jn-status-line" data-status="${state}">`));
+        assert(html.includes(`<p role="${role}">${text(sentence)}</p>`));
+        assert(html.includes(`<button type="button" data-action="connections"><i class="fa-solid fa-link" aria-hidden="true"></i> ${text("menu.label")}</button>`));
+        assert.equal(html.match(/data-action="connections"/g).length, 1); assert(!html.includes("data-jdr-subscriptions"));
+      }
+    }
+    // A subscription is required, whether the server said so on the access or on the options: the message and one link.
+    for (const options of [{ access: { allowed: false, entitled: false, reason: "tierRequired" } }, { prepare: panel => { panel._loadError = "tierRequired"; } }]) {
+      const { context, html, status } = await stage(options);
+      assert.equal(status.state, "tierRequired"); assert.equal(status.pill.label, text("panel.state.subscriptionRequired"));
+      assert.equal(status.step.text, text("creatures.error.tierRequired")); assert.equal(status.step.action, undefined);
+      assert.deepEqual(status.step.link, { href: "https://www.jdr.ninja/abonnements", label: text("creatures.subscription"), kind: "creatures" });
+      assert(html.includes(`<a href="https://www.jdr.ninja/abonnements" target="_blank" rel="noopener noreferrer" data-jdr-subscriptions="creatures">${text("creatures.subscription")}</a>`));
+      assert.equal(html.match(/data-jdr-subscriptions/g).length, 1); assert(!html.includes('data-action="connections"')); assert(!context.showSubscriptionLink);
+    }
+    // The access or the options failed: the message that came back and a retry that reloads both.
+    const retry = ["check", text("button.retry"), "fa-rotate"];
+    for (const code of ["network", "apiUnavailable", "verificationUnavailable", "invalidResponse"]) {
+      const { html, status } = await stage({ prepare: panel => { panel._loadError = code; } });
+      assert.equal(status.state, "unavailable"); assert.equal(status.pill.label, text("panel.state.unavailable"));
+      assert.equal(status.step.text, text(`creatures.error.${code}`)); assert.deepEqual(offer(status.step.action), retry);
+      assert(html.includes(`<p role="alert">${Handlebars.escapeExpression(text(`creatures.error.${code}`))}</p>`));
+      assert(html.includes('<button type="button" data-action="check"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Try again</button>'));
+      assert(!html.includes('data-action="connections"')); assert(!html.includes("data-jdr-subscriptions"));
+    }
+    // An access nobody has checked yet, after a cancelled check for example: it says so and offers the check, which keeps
+    // its own « Check connection » label and runs the window's own reload.
+    const unchecked = await stage({ access: null });
+    assert.equal(unchecked.status.state, "notChecked"); assert.equal(unchecked.status.pill.label, text("status.saved"));
+    assert.equal(unchecked.status.step.text, ""); assert.deepEqual(offer(unchecked.status.step.action), ["check", text("button.check"), "fa-rotate"]);
+    assert(unchecked.html.includes('<button type="button" data-action="check"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Check connection</button>'));
+    assert(!unchecked.html.includes("<p role=")); assert(!unchecked.html.includes('data-action="connections"'));
+    // Verification shows only while the access and the options load, and a window about to load does not flash another state.
+    const pill = `<div class="jn-status-line" data-status="checking"><span class="jn-pill jn-pill--info" role="status"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> ${text("panel.state.checking")}</span></div>`;
+    for (const prepare of [panel => { panel._controller = new AbortController(); panel._loading = true; }, panel => { panel._initialized = false; }]) {
+      const checking = await stage({ access: null, prepare });
+      assert.equal(checking.status.state, "checking"); assert.equal(checking.status.step, null); assert(checking.html.includes(pill));
+      assert(!checking.html.includes("notice-") && !checking.html.includes('data-action="check"'));
+    }
+    // A generation or a creation in progress is not a verification.
+    const generating = await stage({ prepare: panel => { panel._controller = new AbortController(); } });
+    assert.equal(generating.status, null); assert(generating.context.busy); assert(!generating.html.includes(text("panel.state.checking")));
   });
 });
+
+test("the access check and the options load report on the status line while a failed generation keeps its alert", async () => {
+  await inEnglish(async render => {
+    const saved = creatureClient.request, savedSanitize = creatureClient.sanitize;
+    const data = options => options.path.endsWith("capabilities") ? capabilityFixture() : catalogFixture("monster");
+    const fresh = () => { const panel = new MonsterGeneratorPanel(); panel._initialized = true; return panel; };
+    try {
+      // The access check fails: the retry sits on the status line and no alert repeats the message.
+      creatureClient.access = null;
+      creatureClient.request = async () => ({ ok: false, reason: "network" });
+      const panel = fresh();
+      await panel._load();
+      assert.equal(panel._loadError, "network"); assert.equal(panel._error, "");
+      let context = await panel._prepareContext(), html = render(context);
+      assert.equal(context.status.state, "unavailable"); assert.equal(context.error, "");
+      assert(html.includes('data-action="check"')); assert(!html.includes('class="notice notice-error" role="alert"'));
+      assert.equal(html.split(text("creatures.error.network")).length - 1, 1);
+      // The retry reloads the access and the options, and the line goes.
+      creatureClient.request = async options => ({ ok: true, data: data(options) });
+      await panel._load();
+      assert.equal(panel._loadError, ""); context = await panel._prepareContext();
+      assert.equal(context.status, null); assert(context.hasCatalog); assert(!render(context).includes("jn-status-line"));
+      // The access is granted but the options fail: the failure still shows with its retry, though the grant is known.
+      creatureClient.access = null;
+      creatureClient.request = async options => options.path.endsWith("capabilities") ? { ok: true, data: capabilityFixture() } : { ok: false, reason: "network" };
+      const options = fresh();
+      await options._load();
+      assert.equal(creatureClient.access.allowed, true); assert.equal(options._loadError, "network"); assert.equal(options._error, "");
+      context = await options._prepareContext(); html = render(context);
+      assert.equal(context.status.state, "unavailable"); assert.equal(context.status.step.action.name, "check"); assert(!context.hasCatalog);
+      assert.equal(html.split(text("creatures.error.network")).length - 1, 1);
+      options.invalidate(); assert.equal(options._loadError, "", "a new credential forgets the failure");
+      // A failed generation keeps its alert, and the status line stays out of it.
+      creatureClient.access = granted;
+      creatureClient.request = async () => ({ ok: false, reason: "network" });
+      const generation = panelWith(MonsterGeneratorPanel);
+      await generation._generate();
+      assert.equal(generation._error, "network"); assert.equal(generation._loadError, "");
+      context = await generation._prepareContext(); html = render(context);
+      assert.equal(context.status, null); assert(!html.includes("jn-status-line"));
+      assert(html.includes('<p class="notice notice-error" role="alert">')); assert.equal(html.split(text("creatures.error.network")).length - 1, 1);
+      // While the access and the options load the pill says so; the verification ends with the load.
+      creatureClient.access = null;
+      let open; const gate = new Promise(resolve => { open = resolve; });
+      creatureClient.request = async request => { if (request.path.endsWith("capabilities")) await gate; return { ok: true, data: data(request) }; };
+      const loading = fresh(), pending = loading._load();
+      assert.equal(loading._loading, true);
+      context = await loading._prepareContext(); html = render(context);
+      assert.equal(context.status.state, "checking"); assert(html.includes(`${text("panel.state.checking")}</span>`));
+      open(); await pending;
+      assert.equal(loading._loading, false); assert.equal((await loading._prepareContext()).status, null);
+      // While a generation runs the window is busy, and nothing claims to verify.
+      creatureClient.access = granted; creatureClient.sanitize = identity;
+      let finish; creatureClient.request = request => new Promise(resolve => { finish = () => resolve({ ok: true, data: resultFixture(request.body) }); });
+      const running = panelWith(MonsterGeneratorPanel), run = running._generate();
+      while (!finish) await new Promise(resolve => setImmediate(resolve));
+      assert(running._controller); assert.equal(running._loading, false);
+      context = await running._prepareContext();
+      assert.equal(context.status, null); assert(context.busy); assert(!render(context).includes(text("panel.state.checking")));
+      finish(); await run;
+      assert(running._preview); assert.equal(running._loading, false);
+    } finally { creatureClient.request = saved; creatureClient.sanitize = savedSanitize; }
+  });
+});
+
+test("a generation refused for the subscription, the permission or the connection is reported by the status line once, not as unchecked", async () => {
+  await inEnglish(async render => {
+    const saved = creatureClient.request, savedSanitize = creatureClient.sanitize;
+    const refusal = code => ({ ok: false, http: 403, data: { contractVersion: 1, status: "error", error: { code } } });
+    const message = code => Handlebars.escapeExpression(text(`creatures.error.${code}`));
+    try {
+      for (const [code, state, sentence, pill, action] of [
+        ["tierRequired", "tierRequired", "creatures.error.tierRequired", "panel.state.subscriptionRequired", null],
+        ["devicePermissionRequired", "devicePermissionRequired", "panel.step.devicePermission", "panel.state.permissionRequired", "connections"],
+        ["unauthorized", "attention", "notice.reconnectAccount", "panel.state.attention", "connections"],
+        ["wrongDeviceKind", "attention", "notice.reconnectAccount", "panel.state.attention", "connections"],
+      ]) {
+        for (const Class of [MonsterGeneratorPanel, NpcGeneratorPanel]) {
+          creatureClient.access = granted; creatureClient.cooldownUntil = 0; creatureClient.request = async () => refusal(code);
+          const panel = panelWith(Class);
+          await panel._generate();
+          assert.equal(panel._error, code); assert.equal(panel._loadError, ""); assert.equal(creatureClient.access, null, "the refusal withdraws the access");
+          const context = await panel._prepareContext(), html = render(context), label = `${code} ${Class.KIND}`;
+          assert.equal(context.status.state, state, label);
+          assert.notEqual(context.status.pill.label, text("status.saved"), `${label}: not « needs verification »`);
+          assert.equal(context.status.pill.label, text(pill), label); assert.equal(context.status.step.text, text(sentence), label);
+          assert.equal(html.match(/class="jn-status-line"/g).length, 1, label);
+          assert(html.includes(`<p role="status">${Handlebars.escapeExpression(text(sentence))}</p>`), label);
+          // The line carries the failure: no alert repeats it, and the form cannot generate until the access is back.
+          assert.equal(context.error, "", label); assert(!html.includes('role="alert"'), label); assert(!context.canGenerate, label);
+          assert.equal(html.split(message(code)).length - 1, code === "tierRequired" ? 1 : 0, label);
+          assert.equal(html.match(/data-action="connections"/g)?.length ?? 0, action ? 1 : 0, label);
+          // At most one subscriptions link, and only for the subscription.
+          assert.equal(html.match(/data-jdr-subscriptions/g)?.length ?? 0, code === "tierRequired" ? 1 : 0, label);
+          assert.equal(context.showSubscriptionLink, false, label);
+          // A grant seen afterwards (the Connections window checked again) wins over the refusal of the generation.
+          creatureClient.access = granted;
+          assert.equal((await panel._prepareContext()).status, null, label);
+        }
+      }
+    } finally { creatureClient.request = saved; creatureClient.sanitize = savedSanitize; }
+  });
+});
+
+test("the subscriptions link shows at most once: in the status line, or under the alert of a denied generation", async () => {
+  await inEnglish(async render => {
+    const links = html => html.match(/data-jdr-subscriptions="creatures"/g)?.length ?? 0;
+    for (const [name, { access = granted, values = {}, prepare }, expected, placed] of [
+      ["no account", { values: { accountToken: "" } }, 0],
+      ["access not checked", { access: null }, 0],
+      ["subscription denied on the access", { access: { allowed: false, entitled: false, reason: "tierRequired" } }, 1, "line"],
+      ["subscription denied on the options", { prepare: panel => { panel._loadError = "tierRequired"; } }, 1, "line"],
+      ["generation denied", { prepare: panel => { panel._error = "tierRequired"; } }, 1, "alert"],
+      ["denied on both: the line offers it, the alert does not", { prepare: panel => { panel._loadError = "tierRequired"; panel._error = "tierRequired"; } }, 1, "line"],
+      ["another failure of a generation", { prepare: panel => { panel._error = "unauthorized"; } }, 0],
+      ["permission missing", { access: { allowed: false, entitled: true, reason: "devicePermissionRequired" } }, 0],
+      ["access granted", {}, 0],
+    ]) {
+      for (const Class of [MonsterGeneratorPanel, NpcGeneratorPanel]) {
+        creatureClient.access = access; Object.assign(game.values, { accountToken: "fixture-token", creaturesEnabled: true }, values);
+        const panel = panelWith(Class); prepare?.(panel);
+        const context = await panel._prepareContext(), html = render(context);
+        assert.equal(links(html), expected, name);
+        assert.equal(context.showSubscriptionLink, placed === "alert", name);
+        assert.equal(Boolean(context.status?.step?.link), placed === "line", name);
+        assert(!html.includes('data-action="subscription"'));
+        if (expected) assert(html.includes('href="https://www.jdr.ninja/abonnements" target="_blank" rel="noopener noreferrer"'));
+        if (placed === "alert") assert(html.indexOf('role="alert"') < html.indexOf("data-jdr-subscriptions"), "the link follows the alert it belongs to");
+        assert(!JSON.stringify(context).includes("fixture-token"));
+      }
+    }
+  });
+});
+
+test("the NPC generator has the masks icon, the monster generator the dragon, and both open at the generators width", () => {
+  assert.equal(NpcGeneratorPanel.DEFAULT_OPTIONS.window.icon, "fa-solid fa-masks-theater");
+  assert.equal(MonsterGeneratorPanel.DEFAULT_OPTIONS.window.icon, "fa-solid fa-dragon");
+  for (const Class of [MonsterGeneratorPanel, NpcGeneratorPanel]) {
+    assert.equal(Class.DEFAULT_OPTIONS.position.width, 760); assert.equal(Class.DEFAULT_OPTIONS.position.height, 760);
+    assert.equal(typeof Class.DEFAULT_OPTIONS.actions.check, "function"); assert.equal(typeof Class.DEFAULT_OPTIONS.actions.connections, "function");
+  }
+});
+
 
 test("a selected role, profile or recommended FP explains itself under its field, linked to it", async () => {
   await inEnglish(async render => {

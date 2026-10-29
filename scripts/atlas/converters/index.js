@@ -6,7 +6,9 @@
  */
 
 import { SUPPORTED_SYSTEMS } from "../constants.js";
+import { buildSheet as buildDaggerheartSheet } from "./daggerheart.js";
 import { buildSheet as buildDnd5eSheet } from "./dnd5e.js";
+import { buildSheet as buildFalloutSheet } from "./fallout.js";
 import { buildSheet as buildPf2eSheet } from "./pf2e.js";
 import { buildSheet as buildTor2eSheet } from "./tor2e.js";
 import { buildSheet as buildWfrp4eSheet } from "./wfrp4e.js";
@@ -20,6 +22,8 @@ const CONVERTERS = {
   sf2e: buildPf2eSheet,
   tor2e: buildTor2eSheet,
   wfrp4e: buildWfrp4eSheet,
+  daggerheart: buildDaggerheartSheet,
+  fallout: buildFalloutSheet,
 };
 
 /**

@@ -1,10 +1,7 @@
 /* Creature generator windows. Shared components (layout, sections, cards, pills, grid, footer) live in module.css. */
 
-/* Header: the compatibility and access pills on one side, the secondary actions on the other, the system line below. */
-.jdr-ninja .jn-creature-header { display: flex; flex-direction: column; gap: 0.35rem; }
-.jdr-ninja .jn-creature-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
-.jdr-ninja .jn-creature-status { display: inline-flex; }
-.jdr-ninja .jn-creature-system { margin: 0; font-size: var(--font-size-12, 0.8rem); }
+/* Above the form: nothing while the generators work. A state, a failure or a denied generation shows as the shared status line
+   (module.css) or an alert, and the subscriptions link that follows an alert sits tight under it. */
 .jdr-ninja .jn-creature-link { margin: 0; }
 .jdr-ninja .jn-creatures p.notice { margin: 0; }
 

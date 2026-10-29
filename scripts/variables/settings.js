@@ -9,9 +9,11 @@ export function registerVariableSettings(panelMenu, macroMenu) {
     // The callback userId is the author, not the owner of a user-scoped Setting.
     onChange: () => variableService.invalidate(scope),
   });
-  for (const [key, type, icon] of [["variables", panelMenu, "fa-solid fa-sliders"], ["macroArguments", macroMenu, "fa-solid fa-code"]]) {
+  // Each menu repeats the introduction of its window; its button names the action, not the window (the name is the line's).
+  for (const [key, type, icon, hint] of [["variables", panelMenu, "fa-solid fa-sliders", "variables.hint"],
+    ["macroArguments", macroMenu, "fa-solid fa-code", "variables.macroHint"]]) {
     if (!type) continue;
-    game.settings.registerMenu(MODULE_ID, key, { name: `${I18N}.variables.menu.${key}`, label: `${I18N}.variables.menu.${key}`,
-      hint: `${I18N}.variables.menu.hint`, icon, type, restricted: false });
+    game.settings.registerMenu(MODULE_ID, key, { name: `${I18N}.variables.menu.${key}`, label: `${I18N}.variables.menu.${key}Button`,
+      hint: `${I18N}.${hint}`, icon, type, restricted: false });
   }
 }

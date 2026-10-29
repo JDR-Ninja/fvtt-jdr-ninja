@@ -175,9 +175,9 @@ try {
     assert(!mock.calls.some(call => call.path.endsWith("generate")));
     assert.equal(await page.locator('#jdr-ninja-npcs details[data-creature-advanced]').count(), 1);
     assert.equal(await page.locator('#jdr-ninja-npcs [name="includeSecret"]').count(), 1);
+    // A compatible system with granted access shows nothing above the form.
     for (const kind of ['monsters', 'npcs']) {
-      assert.equal(await page.locator(`#jdr-ninja-${kind} [data-compatibility="compatible"]`).count(), 1);
-      assert((await page.locator(`#jdr-ninja-${kind} .jn-creature-system`).innerText()).includes('5.3.3'));
+      assert.equal(await page.locator(`#jdr-ninja-${kind} .jn-status-line`).count(), 0);
     }
   });
   for (const kind of ["monster", "npc"]) await check(`${kind}: generate, sanitized preview and one native actor with shared-resource references`, async () => {
@@ -246,8 +246,8 @@ try {
     for (const mode of ["free", "ungranted", "apiUnavailable"]) {
       mock.mode = mode;
       await page.evaluate(async () => { await game.settings.set("jdr-ninja", "creaturesEnabled", true); });
-      await monster.locator('[data-action="check"]:not([disabled])').waitFor();
-      await monster.locator('[data-action="check"]').click();
+      // Enabling reloads the window by itself; its status line then reports the denial.
+      await monster.locator('.jn-status-line:not([data-status="checking"]):not([data-status="disabled"])').waitFor();
       await page.waitForFunction(() => !foundry.applications.instances.get("jdr-ninja-monsters")._controller);
       assert.equal(await monster.locator("[data-creature-option]").count(), 0);
       assert.equal(await monster.locator(".fa-gem").count(), 0);

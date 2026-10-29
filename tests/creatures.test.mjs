@@ -93,7 +93,6 @@ test("client never uses overlay entitlement and fails closed for permission/subs
     await assert.rejects(client.check(), error => error.code === code);
     assert.deepEqual(calls, ["/api/foundry/v1/capabilities"]);
     assert.equal(client.access.entitled, paid);
-    assert.equal(client.needsSubscription(), !paid);
   }
 });
 test("local guards reject disabled, player and untested targets before HTTP", async () => {

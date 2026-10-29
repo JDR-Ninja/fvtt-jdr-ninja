@@ -28,9 +28,9 @@ export function guardMessage(guard) {
   if (guard.ok) return "";
   const supported = supportedSystemIds();
   if (guard.reason === "system") {
-    return game.i18n.format("JDRNINJA_ATLAS_SYNC.guard.wrongSystem", { system: guard.id, supported });
+    return game.i18n.format("JDRNINJA.atlas.guard.wrongSystem", { system: guard.id, supported });
   }
-  return game.i18n.format("JDRNINJA_ATLAS_SYNC.guard.tooOld", {
+  return game.i18n.format("JDRNINJA.atlas.guard.tooOld", {
     system: guard.id,
     version: guard.version,
     min: guard.min,

@@ -186,9 +186,18 @@ try {
   await page.evaluate(url => fetch(url).catch(() => null), probe);
   assert(unexpected.includes(probe), "HTTPS requests are not intercepted; refusing to contact the live site");
   unexpected.splice(unexpected.indexOf(probe), 1);
-  await page.locator('#join-game-form [name="username"]').waitFor();
-  await page.evaluate(() => { const form = document.getElementById("join-game-form"); form.elements.username.value = "Gamemaster";
-    form.elements.password.value = ""; form.querySelector('button[type="submit"]').click(); });
+  // Foundry 14.369 replaced the join form's `username` text field with a `userId` select; both are handled.
+  await page.locator('#join-game-form [name="username"], #join-game-form [name="userId"]').first().waitFor();
+  await page.evaluate(user => {
+    const form = document.getElementById("join-game-form"), { username, userId, password } = form.elements;
+    if (userId) {
+      const option = [...userId.options].find(entry => entry.textContent.trim() === user);
+      if (!option) throw new Error(`No user named ${user} on the join form`);
+      userId.value = option.value;
+    } else username.value = user;
+    password.value = "";
+    form.querySelector('button[type="submit"]').click();
+  }, "Gamemaster");
   await page.waitForFunction(() => globalThis.game?.ready === true, null, { timeout: 45000 });
   await page.evaluate(async () => { await game.settings.set("core", "moduleConfiguration", { "jdr-ninja": true }); });
   await page.reload();
@@ -227,7 +236,7 @@ try {
   }
   await click(connections, '[data-action="pair"]');
   await page.waitForFunction(token => game.settings.get("jdr-ninja", "accountToken") === token, TOKENS.account);
-  await app(connections).locator('section.jdr-ninja__banner[data-state="verified"]').waitFor();
+  await app(connections).locator('section.jn-banner[data-state="verified"]').waitFor();
   await app(connections).locator('[name="atlasToken"]').fill(TOKENS.atlas);
   await click(connections, '[data-action="saveAtlas"]');
   await app(connections).locator('[data-feature="atlas"][data-state="connected"]', { hasText: ATLAS_WORLD }).waitFor();
@@ -241,14 +250,14 @@ try {
     await app(connections).locator(`[data-feature="${feature}"][data-state="${state}"]`).waitFor();
   }
 
-  // Stream Deck: generate and save a pairing key, then enable the bridge; the fake companion answers the handshake.
+  // Stream Deck: generate a pairing key, give it to the fake companion, then save it, which also enables the bridge.
   await page.evaluate(() => game.modules.get("jdr-ninja").api.openStreamDeck());
   const streamDeck = "jdr-ninja-stream-deck";
   await click(streamDeck, '[data-action="generate"]');
+  companion.key = await app(streamDeck).locator("#jdr-stream-deck-generated").inputValue();
   await click(streamDeck, '[data-action="save"]');
-  await page.waitForFunction(() => Boolean(game.settings.get("jdr-ninja", "streamDeckKey")));
-  companion.key = await page.evaluate(() => game.settings.get("jdr-ninja", "streamDeckKey"));
-  await app(streamDeck).locator('[name="streamDeckEnabled"]:not([disabled])').check();
+  await page.waitForFunction(key => game.settings.get("jdr-ninja", "streamDeckKey") === key
+    && game.settings.get("jdr-ninja", "streamDeckEnabled") === true, companion.key);
   await page.waitForFunction(() => game.modules.get("jdr-ninja").api.streamDeck.status().state === "ready");
   // The row of a feature only changes state on a render; its pill repaints by itself.
   await page.evaluate(() => foundry.applications.instances.get("jdr-ninja-connections").render());
@@ -274,7 +283,7 @@ try {
   const overlay = "jdr-ninja-overlay";
   await app(overlay).locator('[name="overlayTableCommandsEnabled"]').check();
   await app(overlay).locator('[data-action="testRoll"]:not([disabled])').click();
-  await app(overlay).locator(".jdr-ninja__diagnostics").waitFor();
+  await app(overlay).locator(".jn-diagnostics").waitFor();
   await app(overlay).locator('[data-action="testRoll"]:not([disabled])').waitFor();
   await capture(overlay, "overlay");
 

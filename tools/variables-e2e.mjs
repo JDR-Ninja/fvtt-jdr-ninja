@@ -55,8 +55,9 @@ try {
   const native = await fixtures(gm, worldId); const other = await seat(native.gmBName), player = await seat(native.playerName);
   report.versions = await gm.evaluate(() => ({ foundry: game.version, system: game.system.version, module: game.modules.get("jdr-ninja").version }));
   await cases("advanced menus visible without enabling Stream Deck", async () => {
-    await gm.evaluate(() => { game.modules.get("jdr-ninja").api.openConnections(); });
-    const panel = gm.locator("#jdr-ninja-connections"); await panel.locator('[data-action="openVariables"]').waitFor();
+    // The Variables and Macros buttons live in the Stream Deck window, which opens without enabling Stream Deck.
+    await gm.evaluate(() => { game.modules.get("jdr-ninja").api.openStreamDeck(); });
+    const panel = gm.locator("#jdr-ninja-stream-deck"); await panel.locator('[data-action="openVariables"]').waitFor();
     await panel.locator('[data-action="openVariables"]').click(); await gm.locator("#jdr-ninja-variables").waitFor();
     const evidence = await gm.evaluate(() => ({ consent: game.settings.get("jdr-ninja", "streamDeckEnabled"),
       scopes: ["variablesWorld", "variablesPersonal"].map(key => game.settings.settings.get(`jdr-ninja.${key}`).scope),

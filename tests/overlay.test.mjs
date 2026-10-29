@@ -5,6 +5,7 @@ import Handlebars from "handlebars";
 import { OverlayRelay, overlayRelay, CARD_HOLD_CLASS } from "../scripts/overlay/relay.js";
 import { buildOverlayPayload, dsnAppearanceStatus, extractAppearance, tableFormulaIsMeshBacked } from "../scripts/overlay/payload.js";
 import { registerSettings } from "../scripts/settings.js";
+import { overlayState, creatureState, atlasState, windowState, control } from "../scripts/ui/states.js";
 
 class App {
   rendered = false;
@@ -398,8 +399,16 @@ test("the overlay window offers its subscription page only when diagnostics repo
   for (const [data, expected] of [[null, false], [diagnostics(true), false], [diagnostics(false), true]]) {
     const panel = new OverlayPanel(); panel._diagnostics = data;
     const context = await panel._prepareContext();
-    assert.equal(context.needsSubscription, expected);
-    assert.equal(render(context).includes('data-action="subscription"'), expected);
+    const html = render(context);
+    assert.equal(context.status.step?.link?.kind === "overlay", expected);
+    assert.equal(html.includes('data-jdr-subscriptions="overlay"'), expected);
+    // The offers page of the overlay on the saved site address; the sentence is the one « Consult the subscriptions ».
+    if (expected) {
+      assert(html.includes('href="https://www.jdr.ninja/vtt-overlay/abonnement"'));
+      assert(html.includes(`>${copy["JDRNINJA.creatures.subscription"]}</a>`));
+    }
+    // No window button opens it: the link lives in the status line only.
+    assert(!html.includes('data-action="subscription"'));
   }
 });
 
@@ -503,6 +512,30 @@ test("settings changes cancel the appropriate integration and keep account, swit
   assert.deepEqual(calls, ["account", "account", "switch", "preference", "preference", "switch", "atlas", "atlas", "atlas"]);
 });
 
+test("the overlay settings are not listed in the settings tab: their key, scope, default and choices survive", () => {
+  const registered = new Map();
+  game.settings.register = (_module, key, value) => registered.set(key, value);
+  game.settings.registerMenu = () => {};
+  registerSettings({ menus: { connections: ConnectionPanel } });
+  const expected = { overlayEnabled: [false], overlayForwardFilter: ["allPublic", ["allPublic", "playersOnly"]],
+    overlayCardHoldSeconds: ["0", ["0", "1", "2", "3", "5"]], overlayTableCommandsEnabled: [false] };
+  for (const [key, [value, choices]] of Object.entries(expected)) {
+    const options = registered.get(key);
+    assert.equal(options.config, false, key);
+    assert.equal(options.scope, "client", key);
+    assert.equal(options.default, value, key);
+    assert(!("name" in options) && !("hint" in options), `${key}: its window owns the label and the hint`);
+    assert.deepEqual(choices ? Object.keys(options.choices) : undefined, choices, key);
+    assert.equal(typeof options.onChange, "function", key);
+  }
+  // The table-commands switch is no longer a GM-only line of the tab: its configuration does not depend on the user.
+  game.user.isGM = false;
+  assert.equal(registered.get("overlayTableCommandsEnabled").config, false);
+  game.user.isGM = true;
+  assert.equal(registered.get("overlayTableCommandsEnabled").config, false);
+  for (const key of ["overlayLastSuccessAt", "overlayLastErrorAt", "overlayLastError"]) assert.equal(registered.get(key).config, false, key);
+});
+
 test("a relay switch restarts roll and command work but leaves a diagnostics read running; a credential change ends both", async () => {
   const pending = [];
   relay.request = options => new Promise(resolve => pending.push({ options, resolve }));
@@ -576,17 +609,20 @@ test("the overlay template is localized, escapes server labels and hides table c
     game.i18n.localize = key => strings[key] ?? key;
     const hbs = Handlebars.create(); hbs.registerHelper("localize", key => strings[key] ?? key);
     const context = await new OverlayPanel()._prepareContext();
-    context.hasDiagnostics = true;
-    context.rows = [{ label: strings["JDRNINJA.overlay.diag.account"], message: "<img src=x onerror=fixture()>" },
+    context.hasDiagnostics = context.showDiagnostics = true;
+    context.rows = [{ label: strings["JDRNINJA.overlay.diag.subscription"], message: "<img src=x onerror=fixture()>" },
       { label: strings["JDRNINJA.overlay.diag.obs"], message: "<img src=y onerror=fixture()>", level: "warning", icon: "fa-triangle-exclamation" }];
+    // A failure text and the account's own error are escaped too.
+    context.status = windowState(overlayState({ enabled: true, account: "retry" }), { retry: control("diagnostics", "Retry", "fa-rotate"),
+      message: "<img src=z onerror=fixture()>" });
     const html = hbs.compile(template)(context);
     assert(!html.includes("JDRNINJA."), locale);
-    assert(html.includes("&lt;img")); assert(!html.includes("<img src=x")); assert(!html.includes("<img src=y"));
-    assert(html.includes("jn-pill--warning") && html.includes("&lt;img src&#x3D;y"));
+    assert(html.includes("&lt;img")); assert(!html.includes("<img src=x")); assert(!html.includes("<img src=y")); assert(!html.includes("<img src=z"));
+    assert(html.includes("jn-pill--warning") && html.includes("&lt;img src&#x3D;y") && html.includes("&lt;img src&#x3D;z"));
     assert(html.includes('name="overlayTableCommandsEnabled"'));
     const player = hbs.compile(template)({ ...context, isGM: false });
     assert(!player.includes('name="overlayTableCommandsEnabled"'));
-    assert(player.includes('name="overlayEnabled"'));
+    assert(!html.includes('name="overlayEnabled"') && !player.includes('name="overlayEnabled"'), "the activation lives in Connections only");
     for (const action of html.matchAll(/data-action="(\w+)"/g)) assert.equal(typeof OverlayPanel.DEFAULT_OPTIONS.actions[action[1]], "function");
   }
 });
@@ -621,19 +657,19 @@ test("the last accepted send is dated in Foundry's language, without seconds", (
   assert.match(formatMoment(moment, "not_a_locale", { timeZone: "UTC" }), /2026/);
 });
 
-test("each diagnostics line carries its pill beside its message; the account stays a plain value, and players get no poll line", async () => {
+test("each diagnostics line carries its pill beside its message; the account is no line of its own, and players get no poll line", async () => {
   const label = key => copy[`JDRNINJA.overlay.diag.${key}`];
   const panel = new OverlayPanel();
   panel._diagnostics = accountAnswer({ overlay: { exists: true, enabled: true, connectedClients: 0 } });
   const context = await panel._prepareContext();
-  assert.deepEqual(context.rows.map(row => [row.label, row.level]), [[label("account"), null], [label("subscription"), "success"],
+  assert.deepEqual(context.rows.map(row => [row.label, row.level]), [[label("subscription"), "success"],
     [label("overlay"), "success"], [label("obs"), "warning"], [label("poll"), "success"]]);
-  assert.equal(context.rows[0].message, "Fixture GM");
-  assert.equal(context.rows[3].message, copy["JDRNINJA.overlay.diag.obsMissing"]);
-  assert.equal(context.rows[3].icon, "fa-triangle-exclamation");
+  assert(!context.rows.some(row => row.label === label("account") || row.message === "Fixture GM"), "the account name is Connections' business");
+  assert.equal(context.rows[2].message, copy["JDRNINJA.overlay.diag.obsMissing"]);
+  assert.equal(context.rows[2].icon, "fa-triangle-exclamation");
   panel._diagnostics = accountAnswer({ entitled: false, overlay: { exists: false } });
   const refused = await panel._prepareContext();
-  assert.deepEqual(refused.rows.slice(1, 3).map(row => [row.level, row.message]), [["error", copy["JDRNINJA.overlay.error.notEntitled"]],
+  assert.deepEqual(refused.rows.slice(0, 2).map(row => [row.level, row.message]), [["error", copy["JDRNINJA.overlay.error.notEntitled"]],
     ["error", copy["JDRNINJA.overlay.error.overlayDisabled"]]]);
   game.user.isGM = false;
   assert.equal((await panel._prepareContext()).rows.some(row => row.label === label("poll")), false);
@@ -659,7 +695,7 @@ test("the diagnostics show whether the Dice So Nice look reaches the overlay, an
   assert.match(unreadable.message, /^Impossible de lire les réglages d'apparence de Dice So Nice 9\.0\.0\./);
 });
 
-test("the overlay window is one layout of three titled sections, one primary action, and a footer that holds the navigation", async () => {
+test("the overlay window is one layout: a status line, three titled sections, and a footer whose one primary action is the test roll", async () => {
   const template = await readFile(new URL("../templates/overlay.hbs", import.meta.url), "utf8");
   for (const locale of ["fr", "en", "es", "de", "it"]) {
     const strings = JSON.parse(await readFile(new URL(`../lang/${locale}.json`, import.meta.url), "utf8"));
@@ -671,10 +707,13 @@ test("the overlay window is one layout of three titled sections, one primary act
     const flat = html.replace(/\s+/g, " "), esc = value => Handlebars.escapeExpression(value);
     assert(!html.includes("JDRNINJA."), locale);
     // No frames: sections replace fieldsets, in a scrolling layout with a fixed footer.
-    assert.match(html, /^<div class="standard-form jn-layout jdr-ninja__overlay">/);
+    assert.match(html, /^<div class="standard-form jn-layout jn-overlay">/);
     assert(!html.includes("<fieldset") && !html.includes("<legend"), locale);
     assert.equal(html.match(/<footer class="form-footer jn-footer">/g).length, 1);
     assert.equal(html.match(/class="jn-section"/g).length, 3, "roll sending, Twitch table draws and diagnostics");
+    // The status line comes first, before every section.
+    assert(html.indexOf('class="jn-status-line"') > 0 && html.indexOf('class="jn-status-line"') < html.indexOf('class="jn-section"'), locale);
+    assert.equal(html.match(/class="jn-status-line"/g).length, 1);
     const titles = [...html.matchAll(/<h3 class="jn-section__title"[^>]*>\s*<i class="([^"]+)" aria-hidden="true"><\/i>\s*([^<]+?)\s*<\/h3>/g)];
     assert.deepEqual(titles.map(match => match[2]), [strings["JDRNINJA.overlay.sendingTitle"], strings["JDRNINJA.overlay.tablesTitle"],
       strings["JDRNINJA.overlay.diagnostics"]], locale);
@@ -682,30 +721,41 @@ test("the overlay window is one layout of three titled sections, one primary act
     // The Twitch section's title is not repeated by its checkbox label.
     assert.notEqual(strings["JDRNINJA.overlay.tablesTitle"], strings["JDRNINJA.overlay.tablesEnable"], locale);
     assert(flat.includes(`<label for="jdr-ninja-overlay-tables">${esc(strings["JDRNINJA.overlay.tablesEnable"])}</label>`), locale);
-    // One primary button at most; none of the others is stretched outside the footer.
-    assert.equal((html.match(/<button[^>]*class="[^"]*\bbright\b[^"]*"/g) ?? []).length, 1, locale);
-    const beforeFooter = html.slice(0, html.indexOf("<footer"));
-    assert(!beforeFooter.includes('data-action="connections"') && !beforeFooter.includes('data-action="subscription"'));
-    assert(html.slice(html.indexOf("<footer")).includes('data-action="connections"'));
-    assert(html.slice(html.indexOf("<footer")).includes('data-action="subscription"'));
-    // The paid mention is a visible information notice; the diagnostics keep their table and live region.
-    assert(flat.includes(`<p class="notice notice-info">${esc(strings["JDRNINJA.overlay.paidHint"])}</p>`), locale);
-    assert(flat.includes('<dl class="jdr-ninja__diagnostics" aria-live="polite">'));
-    // Pills carry the level, an icon and the message; the account line is text.
+    // One primary button, the test roll, in the footer; the other actions are never primary, and none sits in the footer
+    // but the diagnostics read (and Cancel while busy): « Configure the connections » only appears as a blocked state's action.
+    const buttons = [...html.matchAll(/<button[^>]*>/g)].map(match => match[0]);
+    const bright = buttons.filter(button => /class="[^"]*\bbright\b[^"]*"/.test(button));
+    assert.equal(bright.length, 1, locale);
+    assert(bright[0].includes('data-action="testRoll"') && bright[0].includes("disabled"), "disabled without a subscription");
+    assert(bright[0].includes(`data-tooltip="${esc(strings["JDRNINJA.overlay.testHint"])}"`), locale);
+    const footer = html.slice(html.indexOf("<footer"));
+    assert.deepEqual([...footer.matchAll(/data-action="(\w+)"/g)].map(match => match[1]), ["testRoll", "diagnostics"], locale);
+    assert(footer.indexOf("fa-dice-d20") > 0 && footer.indexOf('class="bright"') < footer.indexOf('data-action="diagnostics"'));
+    assert(!html.includes('data-action="connections"'), "a working window has no « Configure the connections »");
+    assert(!html.includes('data-action="subscription"'));
+    // No activation, no paid notice, no account line: Connections and the status line own them.
+    assert(!html.includes('name="overlayEnabled"') && !html.includes("jdr-ninja-overlay-enabled"), locale);
+    for (const key of ["paidHint", "enable", "enableHint"]) {
+      const removed = strings[`JDRNINJA.overlay.${key}`];
+      assert(!removed || !flat.includes(esc(removed)), `${locale}: ${key}`);
+    }
+    assert(!flat.includes(`<dt>${esc(strings["JDRNINJA.overlay.diag.account"])}</dt>`), `${locale}: no account line`);
+    // The diagnostics keep their table and live region.
+    assert(flat.includes('<dl class="jn-diagnostics" aria-live="polite">'));
+    // Pills carry the level, an icon and the message.
     assert(flat.includes('<span class="jn-pill jn-pill--error"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> '
       + `${esc(strings["JDRNINJA.overlay.error.notEntitled"])}</span>`), locale);
     assert(flat.includes('<span class="jn-pill jn-pill--success"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> '
       + `${esc(strings["JDRNINJA.overlay.diag.overlayActive"])}</span>`), locale);
-    assert(flat.includes("<dd> Fixture GM </dd>"), locale);
-    // Hooks the code and the screenshot tool use.
-    for (const hook of ['name="overlayEnabled"', 'name="overlayForwardFilter"', 'name="overlayCardHoldSeconds"',
+    // Hooks the code and the screenshot tool use: the filter, the delay and the table draws have their only control here.
+    for (const hook of ['name="overlayForwardFilter"', 'name="overlayCardHoldSeconds"',
       'name="overlayTableCommandsEnabled"', 'data-action="diagnostics"', 'data-action="testRoll"', 'data-action="commands"']) {
       assert(html.includes(hook), `${locale}: ${hook}`);
     }
     // Each control has its label; each information icon is focusable and names its tooltip.
     for (const [, id] of html.matchAll(/<(?:input|select) id="([\w-]+)"/g)) assert(html.includes(`<label for="${id}">`), `${locale}: ${id}`);
     const infos = [...html.matchAll(/<i class="fa-solid fa-circle-info jn-info"([^>]*)>/g)].map(match => match[1]);
-    assert.equal(infos.length, 5, "enable, delay, table draws, table setup and the test roll");
+    assert.equal(infos.length, 3, "delay, table draws and table setup: the test roll's hint is its button's tooltip");
     for (const attributes of infos) {
       assert(attributes.includes('tabindex="0"') && attributes.includes('role="img"'), locale);
       const label = attributes.match(/aria-label="([^"]+)"/)?.[1], tooltip = attributes.match(/data-tooltip="([^"]+)"/)?.[1];
@@ -714,7 +764,7 @@ test("the overlay window is one layout of three titled sections, one primary act
   }
 });
 
-test("without subscription news or a GM, the footer keeps only the connections button and the Twitch section disappears", async () => {
+test("a player has no Twitch section, and the footer keeps the test roll and the diagnostics read", async () => {
   const template = await readFile(new URL("../templates/overlay.hbs", import.meta.url), "utf8");
   const hbs = Handlebars.create(); hbs.registerHelper("localize", key => copy[key] ?? key);
   game.user.isGM = false;
@@ -723,9 +773,26 @@ test("without subscription news or a GM, the footer keeps only the connections b
   const html = hbs.compile(template)(await panel._prepareContext());
   assert.equal(html.match(/class="jn-section"/g).length, 2);
   assert(!html.includes("overlayTableCommandsEnabled") && !html.includes('data-action="commands"'));
-  assert(!html.includes('data-action="subscription"'));
-  assert.equal(html.slice(html.indexOf("<footer")).match(/data-action="/g).length, 1);
+  assert(!html.includes('data-action="subscription"') && !html.includes('data-action="connections"'));
+  assert.deepEqual([...html.slice(html.indexOf("<footer")).matchAll(/data-action="(\w+)"/g)].map(match => match[1]), ["testRoll", "diagnostics"]);
   assert(!html.includes(copy["JDRNINJA.overlay.diag.poll"]), "no command poll line for a player");
+  // Active: the test roll is the one enabled primary action.
+  assert.doesNotMatch(html.slice(html.indexOf("<footer")), /disabled/);
+});
+
+test("the diagnostics section appears only with something to show, and the window never needs it to be usable", async () => {
+  const template = await readFile(new URL("../templates/overlay.hbs", import.meta.url), "utf8");
+  const hbs = Handlebars.create(); hbs.registerHelper("localize", key => copy[key] ?? key);
+  const panel = new OverlayPanel();
+  const empty = hbs.compile(template)(await panel._prepareContext());
+  assert.equal(empty.match(/class="jn-section"/g).length, 2);
+  assert(!empty.includes(`> ${copy["JDRNINJA.overlay.diagnostics"]}`));
+  settings.set("overlayLastSuccessAt", Date.UTC(2026, 9, 8, 19, 30, 45));
+  const sent = hbs.compile(template)(await panel._prepareContext());
+  assert.equal(sent.match(/class="jn-section"/g).length, 3);
+  assert(sent.includes(copy["JDRNINJA.overlay.diagnostics"]) && sent.includes("Dernier envoi accepté"));
+  settings.set("overlayLastErrorAt", Date.UTC(2026, 9, 9)); settings.set("overlayLastError", "Fixture failure");
+  assert(hbs.compile(template)(await panel._prepareContext()).includes("Fixture failure"));
 });
 
 test("the overlay window is reused while open and gets a fresh instance after closing", async () => {
@@ -750,4 +817,315 @@ test("closing the overlay panel aborts diagnostics and refuses a late authentica
     assert.equal(panel._diagnostics, null);
     assert.equal(panel.renders, renders);
   } finally { overlayRelay.request = original; }
+});
+
+/**
+ * Every account request waits for its test to answer it, so the window can be looked at while a read is in flight.
+ * `open()` gives a rendered panel that the credential-change hook reaches, like the real one.
+ */
+function holdRequests() {
+  const original = overlayRelay.request, pending = [];
+  overlayRelay.request = options => new Promise(resolve => pending.push({ options, resolve, path: options.path }));
+  const open = () => {
+    const panel = new OverlayPanel();
+    panel.rendered = true; OverlayPanel.instances.add(panel);
+    return panel;
+  };
+  return { pending, open, restore: () => { overlayRelay.request = original; } };
+}
+const firstRender = { isFirstRender: true };
+const DIAGNOSTICS = "/api/foundry/v1/overlay/diagnostics";
+
+test("the window checks the account once per opening, on its first render, and never retries a failure by itself", async () => {
+  const held = holdRequests();
+  try {
+    const panel = held.open();
+    const first = await panel._prepareContext(firstRender);
+    assert.deepEqual(held.pending.map(request => [request.path, request.options.token]), [[DIAGNOSTICS, "fixture-account-token"]]);
+    // The window opens on « Checking », stays usable, and only the pill says so: no busy footer, no disabled control.
+    assert.equal(first.status.state, "checking");
+    assert.equal(first.status.pill.label, copy["JDRNINJA.panel.state.checking"]);
+    assert.equal(first.status.step, null);
+    assert.equal(first.busy, false); assert.equal(first.canCheck, true);
+    held.pending[0].resolve({ ok: true, data: accountAnswer() });
+    await flush();
+    assert.equal(panel.renders, 1, "the answer redraws the window once");
+    assert.equal(panel._diagnostics.account, "Fixture GM");
+    // Neither the next render, nor a repeated « first render » option, nor a setting redraw starts another read.
+    await panel._prepareContext(); await panel._prepareContext({ isFirstRender: false }); await panel._prepareContext(firstRender);
+    OverlayPanel.renderAll(); await flush();
+    assert.equal(held.pending.length, 1);
+    assert.equal((await panel._prepareContext()).status.state, "active");
+    // A failed read stays failed until the user retries.
+    const failing = held.open();
+    await failing._prepareContext(firstRender);
+    held.pending[1].resolve({ ok: false, reason: "network" });
+    await flush();
+    await failing._prepareContext(); OverlayPanel.renderAll(); await flush();
+    assert.equal(held.pending.length, 2);
+    assert.equal((await failing._prepareContext()).status.state, "attention");
+  } finally { held.restore(); }
+});
+
+test("the automatic check leaves every control usable and the footer without Cancel", async () => {
+  const held = holdRequests();
+  try {
+    const panel = held.open();
+    const context = await panel._prepareContext(firstRender);
+    const hbs = Handlebars.create(); hbs.registerHelper("localize", key => copy[key] ?? key);
+    const html = hbs.compile(await readFile(new URL("../templates/overlay.hbs", import.meta.url), "utf8"))(context);
+    assert(html.includes(copy["JDRNINJA.panel.state.checking"]));
+    assert(!html.includes('data-action="cancel"'));
+    assert.doesNotMatch(html.slice(html.indexOf("<section"), html.indexOf("<footer")), /<(?:select|input|button)[^>]*\bdisabled\b/, "the sections stay enabled");
+    assert.match(html, /<button type="button" class="bright" data-action="testRoll"[^>]*disabled>/, "a test roll waits for the Active state");
+    assert.match(html, /<button type="button" data-action="diagnostics"\s*>/, "the check stays available");
+  } finally { held.restore(); }
+});
+
+test("without a saved account credential, or with the standalone module active, the window checks nothing", async () => {
+  const held = holdRequests();
+  try {
+    settings.set("accountToken", "");
+    const player = held.open();
+    assert.equal((await player._prepareContext(firstRender)).status.state, "accountRequired");
+    settings.set("accountToken", "fixture-account-token");
+    game.modules = new Map([["jdr-ninja-vtt-overlay", { active: true }]]);
+    const legacy = held.open();
+    assert.equal((await legacy._prepareContext(firstRender)).status.state, "unavailable");
+    assert.equal(held.pending.length, 0);
+    // The opening is spent: a token saved later is checked by the user, not by a later render.
+    game.modules = new Map();
+    settings.set("accountToken", "fixture-new-token");
+    await player._prepareContext(); await player._prepareContext(firstRender);
+    assert.equal(held.pending.length, 0);
+    assert.equal((await player._prepareContext()).status.state, "attention");
+  } finally { held.restore(); }
+});
+
+test("closing the window cancels the automatic check and refuses its late answer", async () => {
+  const held = holdRequests();
+  try {
+    const panel = held.open();
+    await panel._prepareContext(firstRender);
+    const [request] = held.pending;
+    assert.equal(request.options.signal.aborted, false);
+    await panel.close();
+    assert(request.options.signal.aborted);
+    const renders = panel.renders;
+    request.resolve({ ok: true, data: accountAnswer() });
+    await flush();
+    assert.equal(panel._diagnostics, null);
+    assert.equal(panel.renders, renders);
+    assert.equal(OverlayPanel.instances.has(panel), false);
+  } finally { held.restore(); }
+});
+
+test("an explicit check or test roll ends the automatic check, and the late answer of that check changes nothing", async () => {
+  const held = holdRequests();
+  try {
+    for (const action of ["_check", "_test"]) {
+      held.pending.length = 0;
+      const panel = held.open();
+      await panel._prepareContext(firstRender);
+      const [auto] = held.pending;
+      const explicit = panel[action](); await flush();
+      assert(auto.options.signal.aborted, action);
+      assert.equal(panel._auto, null);
+      // The explicit operation makes the window busy; only a check shows « Checking » in the pill.
+      const busy = await panel._prepareContext();
+      assert.equal(busy.busy, true, action);
+      assert.equal(busy.status.state, action === "_check" ? "checking" : "attention", "no answer describes the account yet");
+      auto.resolve({ ok: true, data: accountAnswer({ account: "Late automatic" }) });
+      await flush();
+      assert.equal(panel._diagnostics, null, "the aborted read describes nothing");
+      if (action === "_check") held.pending[1].resolve({ ok: false, reason: "unauthorized" });
+      else {
+        assert.equal(held.pending[1].path, "/api/foundry/v1/overlay/rolls");
+        held.pending[1].resolve({ ok: true, data: { state: "rolled" } }); await flush();
+        assert.equal(held.pending[2].path, DIAGNOSTICS, "a test roll reads the diagnostics again");
+        held.pending[2].resolve({ ok: false, reason: "unauthorized" });
+      }
+      await explicit;
+      assert.equal(panel._diagnostics, null);
+      assert.equal(panel._failure, "unauthorized");
+      assert.equal((await panel._prepareContext()).status.state, "attention");
+    }
+  } finally { held.restore(); }
+});
+
+test("an answer that arrives after the account credential changed is ignored, and the new credential is checked once", async () => {
+  const held = holdRequests();
+  try {
+    // The credential changes while the read is in flight: the relay already refuses the answer...
+    const panel = held.open();
+    await panel._prepareContext(firstRender);
+    settings.set("accountToken", "fixture-other-token"); overlayRelay.refresh(); OverlayPanel.refreshAll();
+    held.pending[0].resolve({ ok: true, data: accountAnswer() });
+    await flush();
+    assert.equal(panel._diagnostics, null); assert.equal(panel._failure, "");
+    // The new credential is checked once, like a new opening: its state is unknown, not wrong.
+    assert.equal(held.pending.length, 2);
+    assert.equal((await panel._prepareContext()).status.state, "checking");
+    // ... and so does the window, whatever the relay says: the answer was asked for another credential.
+    overlayRelay.diagnostics = async () => { settings.set("accountOrigin", "https://other.example"); return { ok: true, data: accountAnswer() }; };
+    try {
+      const late = held.open();
+      await late._check();
+      assert.equal(late._diagnostics, null); assert.equal(late._failure, "");
+      settings.set("accountOrigin", "https://www.jdr.ninja");
+      overlayRelay.diagnostics = async () => { settings.set("accountToken", "fixture-third-token"); return { ok: false, reason: "network" }; };
+      await late._check();
+      assert.equal(late._failure, "", "a stale failure is ignored as well");
+    } finally { delete overlayRelay.diagnostics; }
+  } finally { held.restore(); }
+});
+
+test("an answer that arrives before the first render completes is drawn once by that render, and never after the window closes", async () => {
+  const held = holdRequests();
+  try {
+    // The window is not rendered yet: the first render is still preparing its context when the read fails.
+    const panel = new OverlayPanel();
+    assert.equal(panel.rendered, false);
+    await panel._prepareContext(firstRender);
+    held.pending[0].resolve({ ok: false, reason: "network" });
+    await flush();
+    assert.equal(panel.renders, 0, "nothing can be redrawn before the window is rendered");
+    assert.equal(panel._failure, "network"); assert.equal(panel._auto, null);
+    // The first render completes: its hook draws the answer, once.
+    panel.element = { querySelector: () => null }; panel.rendered = true;
+    panel._onRender({}, firstRender); await flush();
+    assert.equal(panel.renders, 1);
+    const drawn = await panel._prepareContext();
+    assert.equal(drawn.status.state, "attention"); assert.equal(drawn.status.step.action.name, "diagnostics");
+    panel._onRender({}, {}); await flush();
+    assert.equal(panel.renders, 1, "a later render does not draw it again");
+    assert.equal(held.pending.length, 1, "and nothing is checked again");
+
+    // The window closes before its first render completes, or in the instant between that render and the redraw: nothing is drawn.
+    const early = async () => {
+      const closing = new OverlayPanel();
+      await closing._prepareContext(firstRender);
+      held.pending.at(-1).resolve({ ok: false, reason: "network" }); await flush();
+      assert.equal(closing._drawOnRender, true);
+      return closing;
+    };
+    const before = await early();
+    await before.close(); await flush();
+    assert.equal(before._drawOnRender, false); assert.equal(before.renders, 0);
+    const during = await early();
+    during.element = { querySelector: () => null }; during.rendered = true;
+    during._onRender({}, firstRender); during.rendered = false; await flush();
+    assert.equal(during.renders, 0);
+  } finally { held.restore(); }
+});
+
+test("a window keeps the label and icon of the check it replaces with its own, and reads a saved credential nobody answered as to check", () => {
+  const word = key => copy[`JDRNINJA.${key}`], retry = control("diagnostics", "Retry", "fa-rotate");
+  const offer = status => [status.step.action.name, status.step.action.label, status.step.action.icon];
+  const compatibility = { compatible: true };
+  // A Connections check becomes the window's own, under the label the row gave it: only the name is the window's.
+  assert.deepEqual(offer(windowState(creatureState({ compatibility, access: null }), { retry })), ["diagnostics", word("button.check"), "fa-rotate"]);
+  assert.deepEqual(offer(windowState(atlasState({ enabled: true, configured: true }), { retry })), ["diagnostics", word("button.check"), "fa-rotate"]);
+  assert.deepEqual(offer(windowState(creatureState({ compatibility, access: null, result: { ok: false, reason: "network" } }), { retry })),
+    ["diagnostics", word("button.retry"), "fa-rotate"]);
+  assert.deepEqual(offer(windowState(atlasState({ enabled: true, configured: true, result: { ok: false, reason: "network" } }), { retry })),
+    ["diagnostics", word("button.retry"), "fa-rotate"]);
+  assert.equal(windowState(creatureState({ compatibility, access: null }), {}).step.action, undefined, "without a retry the row has no action");
+  // A saved token nothing has answered for: « Needs verification », no sentence, and the check.
+  const unchecked = windowState(overlayState({ enabled: true, account: "unchecked" }), { retry });
+  assert.deepEqual([unchecked.state, unchecked.reason, unchecked.pill.level, unchecked.pill.label, unchecked.step.level, unchecked.step.text, ...offer(unchecked)],
+    ["attention", "check", "warning", word("status.saved"), "info", "", "diagnostics", word("button.check"), "fa-rotate"]);
+  assert.equal(windowState(overlayState({ enabled: true, account: "unchecked" })).step, null, "no check to offer, no empty message");
+  // With the failure's message the state keeps its pill and offers the window's own retry.
+  const failed = windowState(overlayState({ enabled: true, account: "retry" }), { retry, message: "Down" });
+  assert.deepEqual([failed.pill.label, failed.step.level, failed.step.text, ...offer(failed)],
+    [word("panel.state.attention"), "error", "Down", "diagnostics", "Retry", "fa-rotate"]);
+});
+
+/** The state of the window for each way the account can answer: its pill, its message and its one action or link. */
+const STATE_TABLE = [
+  { name: "disabled", enabled: false, state: "disabled", pill: ["neutral", "fa-circle-minus", "panel.state.disabled"],
+    text: "notice.disabled", action: ["connections", "menu.label", "fa-link"] },
+  { name: "standalone module active", legacy: true, state: "unavailable", pill: ["error", "fa-circle-xmark", "panel.state.unavailable"],
+    text: "overlay.error.legacyActive", role: "alert" },
+  { name: "no token", token: "", state: "accountRequired", pill: ["warning", "fa-triangle-exclamation", "panel.state.accountRequired"],
+    text: "notice.connectAccount", action: ["connections", "menu.label", "fa-link"] },
+  { name: "checking", checking: true, state: "checking", pill: ["info", "fa-spinner fa-spin", "panel.state.checking"] },
+  // A saved token and no answer yet, after « Cancel » for example: it reads « Needs verification » and offers the check.
+  { name: "saved token, no answer yet", state: "attention", pill: ["warning", "fa-triangle-exclamation", "status.saved"],
+    action: ["diagnostics", "button.check", "fa-rotate"] },
+  { name: "token refused", answer: { ok: false, reason: "unauthorized" }, state: "attention",
+    pill: ["warning", "fa-triangle-exclamation", "panel.state.attention"], text: "notice.reconnectAccount", action: ["connections", "menu.label", "fa-link"] },
+  { name: "invalid response", answer: { ok: true, data: { ok: true } }, state: "attention",
+    pill: ["warning", "fa-triangle-exclamation", "panel.state.attention"], text: "notice.reconnectAccount", action: ["connections", "menu.label", "fa-link"] },
+  { name: "a token that is not an account's", answer: { ok: true, data: { ...accountAnswer(), tokenKind: "atlas" } }, state: "attention",
+    pill: ["warning", "fa-triangle-exclamation", "panel.state.attention"], text: "notice.reconnectAccount", action: ["connections", "menu.label", "fa-link"] },
+  ...["network", "server", "rateLimited"].map(reason => ({ name: `${reason} failure`, answer: { ok: false, reason }, state: "attention",
+    pill: ["warning", "fa-triangle-exclamation", "panel.state.attention"], text: `error.${reason}`, role: "alert",
+    action: ["diagnostics", "button.retry", "fa-rotate"] })),
+  { name: "no subscription", answer: { ok: true, data: accountAnswer({ entitled: false }) }, state: "subscriptionRequired",
+    pill: ["warning", "fa-triangle-exclamation", "panel.state.subscriptionRequired"], text: "overlay.error.notEntitled",
+    link: "https://www.jdr.ninja/vtt-overlay/abonnement" },
+  { name: "active", answer: { ok: true, data: accountAnswer() }, state: "active", pill: ["success", "fa-circle-check", "panel.state.active"] },
+];
+
+test("each state of the overlay window shows its pill, its message and its one action, and only Active allows a test roll", async () => {
+  const template = await readFile(new URL("../templates/overlay.hbs", import.meta.url), "utf8");
+  const hbs = Handlebars.create(); hbs.registerHelper("localize", key => copy[key] ?? key);
+  const render = hbs.compile(template), esc = value => Handlebars.escapeExpression(value), word = key => copy[`JDRNINJA.${key}`];
+  const held = holdRequests();
+  try {
+    for (const row of STATE_TABLE) {
+      if (row.enabled === false) settings.set("overlayEnabled", false);
+      if (row.token !== undefined) settings.set("accountToken", row.token);
+      game.modules = new Map(row.legacy ? [["jdr-ninja-vtt-overlay", { active: true }]] : []);
+      const panel = held.open();
+      if (row.checking) await panel._prepareContext(firstRender);
+      if (row.answer) {
+        const check = panel._check(); await flush();
+        held.pending.at(-1).resolve(row.answer); await check;
+      }
+      const context = await panel._prepareContext();
+      assert.equal(context.status.state, row.state, row.name);
+      const html = render(context), flat = html.replace(/\s+/g, " "), line = flat.slice(0, flat.indexOf("<section"));
+      const [level, icon, label] = row.pill;
+      assert(line.includes(`<span class="jn-pill jn-pill--${level}" role="status"><i class="fa-solid ${icon}" aria-hidden="true"></i> ${esc(word(label))}</span>`), `${row.name}: pill`);
+      if (row.text) {
+        const role = row.role ?? "status";
+        assert(line.includes(`<p role="${role}">${esc(word(row.text))}</p>`), `${row.name}: message`);
+      } else assert(!line.includes("<p"), `${row.name}: no message`);
+      const buttons = [...line.matchAll(/<button type="button" data-action="(\w+)"><i class="fa-solid ([\w -]+)" aria-hidden="true"><\/i> ([^<]+)<\/button>/g)];
+      assert.deepEqual(buttons.map(match => [match[1], match[3], match[2]]), row.action ? [[row.action[0], esc(word(row.action[1])), row.action[2]]] : [], `${row.name}: action`);
+      assert.equal(line.includes("<a "), Boolean(row.link), `${row.name}: link`);
+      if (row.link) assert(line.includes(`<a href="${row.link}" target="_blank" rel="noopener noreferrer" data-jdr-subscriptions="overlay">${esc(word("creatures.subscription"))}</a>`));
+      // « Configure the connections » only ever sits in the message of a window that a connection blocks.
+      assert.equal(flat.includes('data-action="connections"'), row.action?.[0] === "connections", `${row.name}: connections`);
+      assert.equal(context.canTest, row.state === "active", `${row.name}: test roll`);
+      assert.equal(/<button[^>]*data-action="testRoll"[^>]*disabled>/.test(html), row.state !== "active", `${row.name}: test roll button`);
+      assert.equal((html.match(/<button[^>]*class="bright"/g) ?? []).length, 1, `${row.name}: one primary action`);
+      OverlayPanel.instances.delete(panel); held.pending.length = 0;
+      settings.set("overlayEnabled", true); settings.set("accountToken", "fixture-account-token");
+    }
+  } finally { held.restore(); }
+});
+
+test("a refused test roll is reported once: a state that already says it hides the repeat", async () => {
+  const held = holdRequests();
+  try {
+    const panel = held.open();
+    panel._diagnostics = accountAnswer();
+    const test = panel._test(); await flush();
+    assert.equal(held.pending[0].path, "/api/foundry/v1/overlay/rolls");
+    held.pending[0].resolve({ ok: true, data: { state: "overlayDisabled" } }); await flush();
+    held.pending[1].resolve({ ok: true, data: accountAnswer({ overlay: { exists: false, enabled: false, connectedClients: 0 } }) });
+    await test;
+    const context = await panel._prepareContext();
+    assert.equal(context.error, copy["JDRNINJA.overlay.error.overlayDisabled"]);
+    assert.deepEqual(notices, [copy["JDRNINJA.overlay.error.overlayDisabled"]]);
+    assert.equal(context.status.state, "active");
+    // The state's own message covers a refusal it already says: no second alert beside the status line.
+    panel._error = copy["JDRNINJA.overlay.error.notEntitled"];
+    panel._diagnostics = accountAnswer({ entitled: false });
+    assert.equal((await panel._prepareContext()).error, "");
+  } finally { held.restore(); }
 });

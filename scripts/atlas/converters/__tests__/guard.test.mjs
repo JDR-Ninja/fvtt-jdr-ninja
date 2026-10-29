@@ -89,23 +89,24 @@ afterEach(() => {
 
 // ── the table ───────────────────────────────────────────────────────────────
 
-test("SUPPORTED_SYSTEMS lists the five documented systems, each with a floor and an Atlas slug", () => {
-  assert.deepEqual(Object.keys(SUPPORTED_SYSTEMS), ["dnd5e", "tor2e", "pf2e", "sf2e", "wfrp4e"]);
+test("SUPPORTED_SYSTEMS lists the seven documented systems, each with a floor and an Atlas slug", () => {
+  assert.deepEqual(Object.keys(SUPPORTED_SYSTEMS), ["dnd5e", "tor2e", "pf2e", "sf2e", "wfrp4e", "daggerheart", "fallout"]);
   for (const [id, entry] of Object.entries(SUPPORTED_SYSTEMS)) {
     assert.match(entry.min, /^\d+\.\d+\.\d+$/, `${id}.min`);
     assert.equal(entry.atlasSlug, `${id}-compatible`);
   }
-  assert.equal(supportedSystemIds(), "dnd5e, tor2e, pf2e, sf2e, wfrp4e");
+  assert.equal(supportedSystemIds(), "dnd5e, tor2e, pf2e, sf2e, wfrp4e, daggerheart, fallout");
 });
 
 test("converterFor resolves a function for EVERY key of SUPPORTED_SYSTEMS (the table and the dispatch cannot drift apart)", () => {
   for (const id of Object.keys(SUPPORTED_SYSTEMS)) {
     assert.equal(typeof converterFor(id), "function", id);
   }
-  // sf2e shares the pf2e converter; the other three are distinct.
+  // sf2e shares the pf2e converter; the others are distinct.
   assert.equal(converterFor("sf2e"), converterFor("pf2e"));
   assert.notEqual(converterFor("dnd5e"), converterFor("pf2e"));
   assert.notEqual(converterFor("tor2e"), converterFor("wfrp4e"));
+  assert.notEqual(converterFor("daggerheart"), converterFor("fallout"));
 });
 
 // ── the guard ───────────────────────────────────────────────────────────────
@@ -118,8 +119,8 @@ test("every supported system at its floor version passes the guard with its Atla
   }
 });
 
-test("newer versions pass: wfrp4e 9.6.4 ≥ 9.0.0, sf2e 1.5.0 ≥ 1.0.0, tor2e 6.2.1 ≥ 6.0.0, pf2e 8.5.0 ≥ 7.5.0, dnd5e 5.3.0 ≥ 3.0.0", () => {
-  const cases = [["wfrp4e", "9.6.4"], ["sf2e", "1.5.0"], ["tor2e", "6.2.1"], ["pf2e", "8.5.0"], ["dnd5e", "5.3.0"]];
+test("newer versions pass: wfrp4e 9.6.4 ≥ 9.0.0, sf2e 1.5.0 ≥ 1.0.0, tor2e 6.2.1 ≥ 6.0.0, pf2e 8.5.0 ≥ 7.5.0, dnd5e 5.3.0 ≥ 3.0.0, daggerheart 2.10.7 ≥ 2.0.0, fallout 11.17.1 ≥ 11.17.0", () => {
+  const cases = [["wfrp4e", "9.6.4"], ["sf2e", "1.5.0"], ["tor2e", "6.2.1"], ["pf2e", "8.5.0"], ["dnd5e", "5.3.0"], ["daggerheart", "2.10.7"], ["fallout", "11.17.1"]];
   for (const [id, version] of cases) {
     stubWorld(id, version);
     const guard = systemGuard();
@@ -128,15 +129,15 @@ test("newer versions pass: wfrp4e 9.6.4 ≥ 9.0.0, sf2e 1.5.0 ≥ 1.0.0, tor2e 6
   }
 });
 
-test("a too-old version is refused with reason 'version' and the floor, and the message names all four", () => {
-  const cases = [["dnd5e", "2.4.1"], ["tor2e", "5.9.9"], ["pf2e", "7.4.9"], ["wfrp4e", "8.7.0"], ["sf2e", "0.9.0"]];
+test("a too-old version is refused with reason 'version' and the floor, and the message names every supported system", () => {
+  const cases = [["dnd5e", "2.4.1"], ["tor2e", "5.9.9"], ["pf2e", "7.4.9"], ["wfrp4e", "8.7.0"], ["sf2e", "0.9.0"], ["daggerheart", "1.9.14"], ["fallout", "11.16.2"]];
   for (const [id, version] of cases) {
     stubWorld(id, version);
     const guard = systemGuard();
     assert.deepEqual(guard, { ok: false, reason: "version", id, version, min: SUPPORTED_SYSTEMS[id].min }, `${id} ${version}`);
     assert.equal(
       guardMessage(guard),
-      `JDRNINJA_ATLAS_SYNC.guard.tooOld ${JSON.stringify({ system: id, version, min: SUPPORTED_SYSTEMS[id].min, supported: supportedSystemIds() })}`,
+      `JDRNINJA.atlas.guard.tooOld ${JSON.stringify({ system: id, version, min: SUPPORTED_SYSTEMS[id].min, supported: supportedSystemIds() })}`,
     );
   }
 });
@@ -147,7 +148,7 @@ test("an unknown system id is refused with reason 'system', whatever its version
   assert.deepEqual(guard, { ok: false, reason: "system", id: "swade", version: "4.4.0" });
   assert.equal(
     guardMessage(guard),
-    `JDRNINJA_ATLAS_SYNC.guard.wrongSystem ${JSON.stringify({ system: "swade", supported: supportedSystemIds() })}`,
+    `JDRNINJA.atlas.guard.wrongSystem ${JSON.stringify({ system: "swade", supported: supportedSystemIds() })}`,
   );
   assert.throws(() => converterFor("swade"), /unsupported game system "swade"/);
 });
@@ -251,7 +252,7 @@ test("the portrait warning shows only on a successful write that left the portra
   for (const code of LANGUAGES) {
     globalThis.game.i18n = i18nFor(code);
     const strings = flatten(readLanguage(code));
-    const expected = strings["JDRNINJA_ATLAS_SYNC.notify.portraitTooLarge"].replace("{size}", "2");
+    const expected = strings["JDRNINJA.atlas.notify.portraitTooLarge"].replace("{size}", "2");
     assert.equal(portraitMessage({ ok: true, status: "OK", body: {}, portraitNotice: "TOO_LARGE" }), expected, code);
     assert.ok(!expected.includes("{"), code);
   }
@@ -264,8 +265,8 @@ test("the portrait warning shows only on a successful write that left the portra
 test("the five language files carry identical key sets, and every STATUS and VALIDATION_ERROR code has its string", () => {
   const keySets = Object.fromEntries(LANGUAGES.map((code) => [code, Object.keys(flatten(readLanguage(code))).sort()]));
   for (const code of LANGUAGES) assert.deepEqual(keySets[code], keySets.en, `${code} vs en`);
-  for (const status of Object.values(STATUS)) assert.ok(keySets.en.includes(`JDRNINJA_ATLAS_SYNC.status.${status}`), status);
-  for (const error of Object.values(VALIDATION_ERROR)) assert.ok(keySets.en.includes(`JDRNINJA_ATLAS_SYNC.error.${error}`), error);
+  for (const status of Object.values(STATUS)) assert.ok(keySets.en.includes(`JDRNINJA.atlas.status.${status}`), status);
+  for (const error of Object.values(VALIDATION_ERROR)) assert.ok(keySets.en.includes(`JDRNINJA.atlas.error.${error}`), error);
   // No em-dash anywhere; no « tu » in the French copy (vouvoiement). Letter boundaries are Unicode
   // ones: JS `\b` is ASCII-only and would read the « tes » of « requêtes » as a word.
   const tutoiement = /(?<!\p{L})(tu|ton|ta|tes)(?!\p{L})/iu;
@@ -283,15 +284,15 @@ test("VALIDATION_FAILED with a SYSTEM_MISMATCH, TOO_LARGE or MALFORMED_BODY erro
     const strings = flatten(readLanguage(code));
     for (const [errorCode, path] of [["SYSTEM_MISMATCH", "systemSlug"], ["TOO_LARGE", "rpgData"], ["MALFORMED_BODY", "rpgData"]]) {
       const result = { ok: false, status: "VALIDATION_FAILED", http: 422, body: { status: "VALIDATION_FAILED", errors: [{ code: errorCode, path }] } };
-      assert.equal(resultMessage(result), strings[`JDRNINJA_ATLAS_SYNC.error.${errorCode}`], `${code} ${errorCode}`);
-      assert.notEqual(resultMessage(result), strings["JDRNINJA_ATLAS_SYNC.status.VALIDATION_FAILED"]);
+      assert.equal(resultMessage(result), strings[`JDRNINJA.atlas.error.${errorCode}`], `${code} ${errorCode}`);
+      assert.notEqual(resultMessage(result), strings["JDRNINJA.atlas.status.VALIDATION_FAILED"]);
     }
   }
 });
 
 test("VALIDATION_FAILED with any other code, no errors or no body keeps the generic string; only the first error counts", () => {
   globalThis.game.i18n = i18nFor("fr");
-  const generic = flatten(readLanguage("fr"))["JDRNINJA_ATLAS_SYNC.status.VALIDATION_FAILED"];
+  const generic = flatten(readLanguage("fr"))["JDRNINJA.atlas.status.VALIDATION_FAILED"];
   const failed = (body) => ({ ok: false, status: "VALIDATION_FAILED", http: 422, body });
   assert.equal(resultMessage(failed({ errors: [{ code: "VALIDATION_FAILED", path: "rpgData" }] })), generic);
   assert.equal(resultMessage(failed({ errors: [{ code: "REQUIRED", path: "name" }] })), generic);

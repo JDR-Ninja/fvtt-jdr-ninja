@@ -1,4 +1,4 @@
-<div class="standard-form jn-layout atlas-sync">
+<div class="standard-form jn-layout jn-atlas">
   {{#if guardMessage}}
     <div class="jn-scroll">
       <p class="notice notice-warning">
@@ -6,35 +6,37 @@
       </p>
     </div>
   {{else}}
-    <header class="atlas-sync__header">
-      <span class="jn-pill jn-pill--{{connection.level}}">
-        <i class="fa-solid {{connection.icon}}" aria-hidden="true"></i> {{connection.label}}
-      </span>
-      {{#if connected}}<span class="atlas-sync__world">{{worldName}}</span>{{/if}}
-      <span class="jn-muted atlas-sync__system">{{systemLabel}}</span>
-      <button type="button" class="jn-icon-button atlas-sync__refresh" data-action="refresh" {{#if busy}}disabled{{/if}}
-              aria-label="{{localize "JDRNINJA_ATLAS_SYNC.app.refresh"}}" data-tooltip="{{localize "JDRNINJA_ATLAS_SYNC.app.refresh"}}">
+    <header class="jn-atlas-header">
+      {{#if connection}}
+        <span class="jn-pill jn-pill--{{connection.level}}">
+          <i class="fa-solid {{connection.icon}}" aria-hidden="true"></i> {{connection.label}}
+        </span>
+      {{/if}}
+      {{#if connected}}<span class="jn-atlas-world">{{worldName}}</span>{{/if}}
+      <span class="jn-muted jn-atlas-system">{{systemLabel}}</span>
+      <button type="button" class="jn-icon-button jn-atlas-refresh" data-action="refresh" {{#if busy}}disabled{{/if}}
+              aria-label="{{localize "JDRNINJA.atlas.app.refresh"}}" data-tooltip="{{localize "JDRNINJA.atlas.app.refresh"}}">
         <i class="fa-solid fa-rotate" aria-hidden="true"></i>
       </button>
     </header>
 
-    <div class="jn-grid-2 atlas-sync__controls">
+    <div class="jn-grid-2 jn-atlas-controls">
       <div class="form-group">
-        <label for="jdr-ninja-atlas-campaign">{{localize "JDRNINJA_ATLAS_SYNC.app.campaign"}}</label>
+        <label for="jdr-ninja-atlas-campaign">{{localize "JDRNINJA.atlas.app.campaign"}}</label>
         <div class="form-fields">
           <select id="jdr-ninja-atlas-campaign" data-control="campaign" {{#if busy}}disabled{{/if}} {{#unless connected}}disabled{{/unless}}>
-            <option value="">{{localize "JDRNINJA_ATLAS_SYNC.app.pickCampaign"}}</option>
+            <option value="">{{localize "JDRNINJA.atlas.app.pickCampaign"}}</option>
             {{#each campaigns}}
               <option value="{{this.id}}" {{#if this.selected}}selected{{/if}}>{{this.name}} ({{this.count}})</option>
             {{/each}}
           </select>
         </div>
       </div>
-      <div class="form-group jdr-ninja__check">
+      <div class="form-group jn-check">
         <div class="form-fields">
           <input id="jdr-ninja-atlas-claimable" type="checkbox" data-control="claimable" {{#if busy}}disabled{{/if}} {{#if markClaimable}}checked{{/if}}>
         </div>
-        <label for="jdr-ninja-atlas-claimable">{{localize "JDRNINJA_ATLAS_SYNC.app.createClaimable"}}</label>
+        <label for="jdr-ninja-atlas-claimable">{{localize "JDRNINJA.atlas.app.createClaimable"}}</label>
       </div>
     </div>
 
@@ -43,19 +45,19 @@
     {{/if}}
     {{#if connected}}
       {{#unless tierAllowed}}
-        <p class="notice notice-info">{{localize "JDRNINJA_ATLAS_SYNC.status.TIER_REQUIRED"}}</p>
+        <p class="notice notice-info">{{localize "JDRNINJA.atlas.status.TIER_REQUIRED"}}</p>
       {{/unless}}
     {{/if}}
 
     <div class="jn-scroll" aria-busy="{{#if loading}}true{{else}}false{{/if}}">
       {{#unless loading}}
-        <ul class="atlas-sync__rows">
+        <ul class="jn-atlas-rows">
           {{#each rows}}
-            <li class="jn-card atlas-sync__row" data-actor-id="{{this.actorId}}">
-              <img class="atlas-sync__avatar" src="{{this.img}}" alt="" width="40" height="40">
-              <div class="atlas-sync__row-main">
-                <span class="atlas-sync__row-name">{{this.name}}</span>
-                <div class="atlas-sync__row-status">
+            <li class="jn-card jn-atlas-row" data-actor-id="{{this.actorId}}">
+              <img class="jn-atlas-avatar" src="{{this.img}}" alt="" width="40" height="40">
+              <div class="jn-atlas-row-main">
+                <span class="jn-atlas-row-name">{{this.name}}</span>
+                <div class="jn-atlas-row-status">
                   <span class="jn-pill jn-pill--{{this.status.level}}">
                     <i class="fa-solid {{this.status.icon}}" aria-hidden="true"></i> {{this.status.label}}
                   </span>
@@ -67,23 +69,23 @@
                   </p>
                 {{/if}}
               </div>
-              <div class="jn-toolbar atlas-sync__row-actions">
+              <div class="jn-toolbar jn-atlas-row-actions">
                 {{#if this.linked}}
                   <button type="button" class="jn-icon-button" data-action="sync" {{#unless ../canWrite}}disabled{{/unless}}
-                          aria-label="{{localize "JDRNINJA_ATLAS_SYNC.row.sync"}}" data-tooltip="{{localize "JDRNINJA_ATLAS_SYNC.row.sync"}}">
+                          aria-label="{{localize "JDRNINJA.atlas.row.sync"}}" data-tooltip="{{localize "JDRNINJA.atlas.row.sync"}}">
                     <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
                   </button>
                   <button type="button" class="jn-danger" data-action="unlink" {{#if ../busy}}disabled{{/if}}>
-                    <i class="fa-solid fa-link-slash" aria-hidden="true"></i> {{localize "JDRNINJA_ATLAS_SYNC.row.unlink"}}
+                    <i class="fa-solid fa-link-slash" aria-hidden="true"></i> {{localize "JDRNINJA.atlas.row.unlink"}}
                   </button>
                 {{else}}
                   <button type="button" data-action="create"
                           {{#unless ../canWrite}}disabled{{/unless}} {{#unless ../hasCampaign}}disabled{{/unless}}>
-                    <i class="fa-solid fa-plus" aria-hidden="true"></i> {{localize "JDRNINJA_ATLAS_SYNC.row.create"}}
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i> {{localize "JDRNINJA.atlas.row.create"}}
                   </button>
                   <button type="button" data-action="link" {{#unless ../canWrite}}disabled{{/unless}}
                           {{#unless ../hasCampaign}}disabled{{/unless}}>
-                    <i class="fa-solid fa-link" aria-hidden="true"></i> {{localize "JDRNINJA_ATLAS_SYNC.row.link"}}
+                    <i class="fa-solid fa-link" aria-hidden="true"></i> {{localize "JDRNINJA.atlas.row.link"}}
                   </button>
                 {{/if}}
               </div>
@@ -95,7 +97,7 @@
 
     <footer class="form-footer jn-footer">
       <button type="button" class="bright" data-action="syncAll" {{#unless canWrite}}disabled{{/unless}}>
-        <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i> {{localize "JDRNINJA_ATLAS_SYNC.app.syncAll"}}
+        <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i> {{localize "JDRNINJA.atlas.app.syncAll"}}
       </button>
     </footer>
   {{/if}}

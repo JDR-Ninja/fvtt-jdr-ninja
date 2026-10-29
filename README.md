@@ -32,8 +32,10 @@ Foundry control does not require a JDR Ninja account.
 Link Foundry actors to **Atlas** characters, create new ones, and sync sheets
 and portraits individually or together.
 
-Supports **D&D5e, Pathfinder 2e, Starfinder 2e, The One Ring 2e, and WFRP4e**.
-Synchronization is managed by the GM.
+Supports **D&D5e, Pathfinder 2e, Starfinder 2e, The One Ring 2e, WFRP4e, Daggerheart,
+and Fallout: The Roleplaying Game** (including robot characters).
+Synchronization is managed by the GM. With Daggerheart, sync a Druid outside beastform:
+a sync during a transformation sends the transformed traits and Evasion.
 
 ![Atlas Sync window with synced heroes and one character ready to create in Atlas](docs/images/atlas-sync.png)
 
@@ -47,7 +49,7 @@ from approved RollTables.
 
 Private rolls stay private. Live overlay rolls require a paid subscription.
 
-![VTT Overlay window with roll forwarding, Twitch table draws and account diagnostics](docs/images/overlay.png)
+![VTT Overlay window with its active status, roll forwarding, Twitch table draws and diagnostics](docs/images/overlay.png)
 
 [Set up the overlay →](https://www.jdr.ninja/en/integration-foundry/guide#activer-les-fonctions)
 
@@ -130,3 +132,7 @@ Screenshots show invented demo content in Foundry VTT V14 with D&D5e 5.3.3.
 Character portraits are Foundry VTT icons from [game-icons.net](https://game-icons.net),
 created by [various authors](https://game-icons.net/about.html#authors) and licensed under
 [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).
+
+## Notices
+
+This product includes materials from the Daggerheart System Reference Document 2.0, © Critical Role, LLC. under the terms of the Darrington Press Community Gaming (DPCGL) License. More information can be found at https://www.daggerheart.com. There are no previous modifications by others.

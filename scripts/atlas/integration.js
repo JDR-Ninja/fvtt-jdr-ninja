@@ -1,62 +1,27 @@
 import { MODULE_ID, SETTINGS } from "../constants.js";
-import { STATUS } from "./constants.js";
+import { STATUS, isSyncableActor } from "./constants.js";
 import { atlasAccess } from "./availability.js";
 import { AtlasApi, cancelAtlasRequests } from "./api.js";
 import { AtlasSyncApp } from "./sync-app.js";
 import { getLink } from "./flags.js";
 import { pushActor, createActor, notify } from "./sync.js";
+import { removeShortcuts, shortcutRow, shortcutButton } from "../ui/directory.js";
 
 /** The Actors entry points exist only for a GM who can sync now; Connections explains every other state. */
 function atlasReady() { return atlasAccess().ok && AtlasApi.hasToken(); }
 
-/**
- * The module's Actors shortcuts share one compact row, `div.jn-directory-actions`. The first integration to render
- * creates it and the next one reuses it, so this finds the row before making one.
- */
-function shortcutRow(host) {
-  const existing = host.querySelector(".jn-directory-actions");
-  if (existing) return existing;
-  const row = document.createElement("div");
-  row.className = "jn-directory-actions";
-  return row;
-}
-
-/** The shortcut: an icon and a short label, with the window's full title as its tooltip and accessible name. */
-function atlasButton() {
-  const title = game.i18n.localize("JDRNINJA_ATLAS_SYNC.app.title");
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "jdr-ninja-atlas-open jn-directory-button";
-  button.setAttribute("data-tooltip", title);
-  button.setAttribute("aria-label", title);
-  const icon = document.createElement("i");
-  icon.className = "fa-solid fa-globe";
-  icon.setAttribute("aria-hidden", "true");
-  const label = document.createElement("span");
-  label.textContent = game.i18n.localize("JDRNINJA_ATLAS_SYNC.app.openButton");
-  button.append(icon, label);
-  button.addEventListener("click", () => AtlasSyncApp.open());
-  return button;
-}
-
+/** The Actors shortcut: an icon, the short label and the window's full title as tooltip, first in the shared row. */
 export function renderAtlasButton(_app, html) {
   const root = html instanceof HTMLElement ? html : html?.[0];
   if (!root) return;
-  const stale = root.querySelector(".jdr-ninja-atlas-open");
-  const staleRow = stale?.parentElement;
-  stale?.remove();
-  // A row this button was alone in would otherwise stay behind as an empty gap.
-  if (staleRow?.classList?.contains("jn-directory-actions") && !staleRow.children.length) staleRow.remove();
+  removeShortcuts(root, ".jdr-ninja-atlas-open");
   if (!atlasReady()) return;
-  const header = root.querySelector(".header-actions") || root.querySelector(".directory-header");
-  const host = header || root.querySelector(".directory-footer") || root;
-  const row = shortcutRow(host);
   // First in the row whichever integration rendered first: Atlas, then the generators.
-  row.prepend(atlasButton());
-  // Foundry's header takes the row after its own buttons; the footer and the bare root keep it first.
-  if (row.parentElement) return;
-  if (header) host.append(row);
-  else host.prepend(row);
+  shortcutRow(root).prepend(shortcutButton({
+    className: "jdr-ninja-atlas-open", icon: "fa-solid fa-globe",
+    title: game.i18n.localize("JDRNINJA.atlas.app.title"), label: game.i18n.localize("JDRNINJA.atlas.app.openButton"),
+    onClick: () => AtlasSyncApp.open(),
+  }));
 }
 
 function actorFromEntry(li) {
@@ -74,21 +39,21 @@ function actorFromEntry(li) {
  */
 export function atlasContextOptions(_app, items) {
   items.push({
-    label: "JDRNINJA_ATLAS_SYNC.context.sync", icon: "fa-solid fa-globe",
-    visible: li => atlasReady() && actorFromEntry(li)?.type === "character",
+    label: "JDRNINJA.atlas.context.sync", icon: "fa-solid fa-globe",
+    visible: li => atlasReady() && isSyncableActor(actorFromEntry(li)),
     onClick: async (_event, li) => {
       const access = atlasAccess();
       if (!access.ok) { notify(access); return; }
       const actor = actorFromEntry(li);
-      if (actor?.type !== "character") return;
+      if (!isSyncableActor(actor)) return;
       try {
         if (getLink(actor)?.atlasCharacterId) { notify(await pushActor(actor)); return; }
         const campaignId = game.settings.get(MODULE_ID, SETTINGS.atlasCampaignId);
         if (!campaignId) {
-          ui.notifications.warn(game.i18n.localize("JDRNINJA_ATLAS_SYNC.notify.pickCampaign")); return;
+          ui.notifications.warn(game.i18n.localize("JDRNINJA.atlas.notify.pickCampaign")); return;
         }
         notify(await createActor(actor, campaignId, game.settings.get(MODULE_ID, SETTINGS.atlasMarkClaimable)),
-          "JDRNINJA_ATLAS_SYNC.notify.created");
+          "JDRNINJA.atlas.notify.created");
       } catch { notify({ ok: false, status: STATUS.VALIDATION_FAILED, body: {} }); }
     },
   });
@@ -102,8 +67,8 @@ export function registerAtlasIntegration() {
 /** World switch/credential changes immediately invalidate the old sync surface on every client. */
 export function refreshAtlasIntegration() {
   cancelAtlasRequests();
-  if (AtlasSyncApp._instance?.rendered) {
-    AtlasSyncApp._instance.close().catch(() => {});
+  if (AtlasSyncApp.instance?.rendered) {
+    AtlasSyncApp.instance.close().catch(() => {});
   }
   if (ui.actors?.rendered) ui.actors.render({ force: true });
 }

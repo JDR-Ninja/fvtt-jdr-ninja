@@ -3,51 +3,21 @@ import { streamDeckBridge } from "./bridge.js";
 import { normalizeBridgeUrl, normalizeBridgeKey, randomNonce } from "./protocol.js";
 import { VariablePanel } from "../variables/panel.js";
 import { MacroArgumentsPanel } from "../variables/macro-panel.js";
+import { streamDeckPill, paintStreamDeckPill } from "../ui/states.js";
+import { openSingleton, releaseSingleton } from "../ui/window.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const translate = key => game.i18n.localize(`${I18N}.streamDeck.${key}`);
 
-/** Icon of each pill level, the same four levels every status pill of the module's windows uses. */
-export const PILL_ICONS = Object.freeze({ success: "fa-circle-check", warning: "fa-triangle-exclamation", error: "fa-circle-xmark",
-  neutral: "fa-circle-minus" });
-/**
- * The pill level of every bridge state, derived here so the templates only render the level they receive.
- * Ready is a success, a state on its way to ready warns, a switched-off bridge is neutral and any state that stopped
- * short of ready needs the user's attention.
- */
-export const STREAM_DECK_LEVELS = Object.freeze({
-  ready: "success",
-  connecting: "warning", authenticating: "warning", awaitingAuthentication: "warning", synchronizing: "warning",
-  disabled: "neutral",
-  unconfigured: "error", disconnected: "error", unavailable: "error",
-});
-/** The pill of a bridge state: its level, an icon (the text always accompanies it) and the localized state name. */
-export function streamDeckPill(state) {
-  const level = STREAM_DECK_LEVELS[state] ?? "neutral";
-  return { level, icon: level === "warning" ? "fa-spinner fa-spin" : PILL_ICONS[level], label: translate(`state.${state}`) };
-}
-/** Repaints a rendered pill in place: a live status change must never re-render, and so erase, a form being edited. */
-export function paintStreamDeckPill(pill, state) {
-  if (!pill) return;
-  const { level, icon, label } = streamDeckPill(state);
-  pill.className = `jn-pill jn-pill--${level}`;
-  const glyph = pill.querySelector("[data-pill-icon]"), text = pill.querySelector("[data-pill-text]");
-  if (glyph) glyph.className = `fa-solid ${icon}`;
-  if (text) text.textContent = label;
-}
+export { STREAM_DECK_LEVELS, streamDeckPill, paintStreamDeckPill } from "../ui/states.js";
 
 export class StreamDeckPanel extends HandlebarsApplicationMixin(ApplicationV2) {
   static instance = null;
-  static open() {
-    const panel = this.instance ??= new this();
-    if (!panel.rendered) panel.render({ force: true });
-    else { if (panel.minimized) void panel.maximize(); panel.bringToFront(); }
-    return panel;
-  }
+  static open() { return openSingleton(this); }
   static DEFAULT_OPTIONS = {
     id: "jdr-ninja-stream-deck", classes: ["jdr-ninja"], tag: "div",
     window: { title: `${I18N}.streamDeck.title`, icon: "fa-solid fa-table-cells", resizable: true },
-    position: { width: 620, height: "auto" },
+    position: { width: 600, height: "auto" },
     actions: { save: StreamDeckPanel.prototype._save, reconnect: StreamDeckPanel.prototype._reconnect,
       generate: StreamDeckPanel.prototype._generate, disconnect: StreamDeckPanel.prototype._disconnect,
       openVariables: StreamDeckPanel.prototype._openVariables, openMacroArguments: StreamDeckPanel.prototype._openMacroArguments },
@@ -75,8 +45,6 @@ export class StreamDeckPanel extends HandlebarsApplicationMixin(ApplicationV2) {
         error.hidden = !error.textContent;
       }
     });
-    this.element.querySelector('[name="streamDeckEnabled"]')?.addEventListener("change", event =>
-      this._run(() => game.settings.set(MODULE_ID, SETTINGS.streamDeckEnabled, event.currentTarget.checked)));
   }
   async _run(action) {
     if (this._busy) return;
@@ -96,6 +64,8 @@ export class StreamDeckPanel extends HandlebarsApplicationMixin(ApplicationV2) {
       await game.settings.set(MODULE_ID, SETTINGS.streamDeckKey, "");
       await game.settings.set(MODULE_ID, SETTINGS.streamDeckUrl, endpoint);
       await game.settings.set(MODULE_ID, SETTINGS.streamDeckKey, key);
+      // Saving is the explicit consent a new key needs: the same button also switches back on a Stream Deck turned off from Connections.
+      await game.settings.set(MODULE_ID, SETTINGS.streamDeckEnabled, true);
       this._generated = "";
     });
   }
@@ -111,7 +81,7 @@ export class StreamDeckPanel extends HandlebarsApplicationMixin(ApplicationV2) {
   }
   async close(options) {
     this._unsubscribe?.(); this._unsubscribe = null; this._generated = "";
-    if (StreamDeckPanel.instance === this) StreamDeckPanel.instance = null;
+    releaseSingleton(this);
     return super.close(options);
   }
 }

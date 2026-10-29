@@ -78,12 +78,35 @@ test("the variables and macro windows are singletons that listen only while show
     assert.equal(VariablePanel.open(), panel); assert.equal(panel.renders, 1); assert.equal(panel.fronted, 1);
     assert.equal(service.active.size, 1);
     await panel.render(); assert.equal(service.active.size, 1);
-    await panel.close(); assert.equal(service.active.size, 0); assert.equal(VariablePanel._instance, null);
+    assert.equal(VariablePanel.instance, panel);
+    await panel.close(); assert.equal(service.active.size, 0); assert.equal(VariablePanel.instance, null);
     const next = VariablePanel.open(); assert.notEqual(next, panel); await flush(); await next.close();
     const macro = MacroArgumentsPanel.open(); await flush();
+    assert.equal(MacroArgumentsPanel.instance, macro);
     assert.equal(MacroArgumentsPanel.open(), macro); assert.equal(macro.renders, 1); assert.equal(macro.fronted, 1);
-    await macro.close(); assert.equal(MacroArgumentsPanel._instance, null);
+    await macro.close(); assert.equal(MacroArgumentsPanel.instance, null);
   } finally { service.restore(); }
+});
+test("the windows keep their widths, and unsaved changes keep a window open until the GM confirms", async () => {
+  assert.equal(VariablePanel.DEFAULT_OPTIONS.position.width, 920); assert.equal(MacroArgumentsPanel.DEFAULT_OPTIONS.position.width, 760);
+  const { DialogV2 } = foundry.applications.api, confirm = DialogV2.confirm, answers = [];
+  try {
+    for (const Panel of [VariablePanel, MacroArgumentsPanel]) {
+      const panel = Panel.open(); await flush(); panel.dirty = true;
+      DialogV2.confirm = async () => { answers.push(Panel.name); return false; };
+      await panel.close(); assert.equal(panel.rendered, true, `${Panel.name} stays open`); assert.equal(Panel.instance, panel);
+      DialogV2.confirm = async () => true;
+      await panel.close(); assert.equal(panel.rendered, false); assert.equal(Panel.instance, null);
+    }
+    assert.deepEqual(answers, ["VariablePanel", "MacroArgumentsPanel"]);
+  } finally { DialogV2.confirm = confirm; }
+});
+test("a store that cannot be read gives the window its message alone", async () => {
+  const get = game.settings.get; game.settings.get = () => { throw new Error("unreadable"); };
+  try {
+    const context = await new VariablePanel()._prepareContext();
+    assert.deepEqual(Object.keys(context).sort(), ["error", "layout"]); assert.equal(context.error, variableError(new Error("unreadable")));
+  } finally { game.settings.get = get; }
 });
 test("with no draft, world changes rewrite values in place; only a definition change redraws, keeping the search, focus and caret", async () => {
   const service = subscriptions();

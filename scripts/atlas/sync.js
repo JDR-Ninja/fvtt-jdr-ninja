@@ -5,7 +5,7 @@
  * of the request) and writes the flags back on success.
  */
 
-import { STATUS, PORTRAIT_OUTCOME, localizeStatus, localizeValidationError, formatRetryDelay } from "./constants.js";
+import { STATUS, PORTRAIT_OUTCOME, localizeStatus, localizeValidationError, formatRetryDelay, isSyncableActor } from "./constants.js";
 import { AtlasApi } from "./api.js";
 import { buildPayload, dropOversizedPortrait, portraitLimitMegabytes } from "./converter.js";
 import { getLink, setLink, markSynced } from "./flags.js";
@@ -35,7 +35,7 @@ function withPortraitNotice(result, portraitTooLarge) {
 async function withActor(actor, action) {
   const access = atlasAccess();
   if (!access.ok) return access;
-  if (actor?.type !== "character") return { ok: false, status: STATUS.CHARACTER_NOT_FOUND, body: {} };
+  if (!isSyncableActor(actor)) return { ok: false, status: STATUS.CHARACTER_NOT_FOUND, body: {} };
   if (pendingActors.has(actor.id)) return { ok: false, status: STATUS.SYNC_IN_PROGRESS, body: {} };
   pendingActors.add(actor.id);
   const controller = new AbortController();
@@ -101,7 +101,7 @@ export async function createActor(actor, campaignId, markCreatedAsClaimable) {
  */
 export function portraitMessage(result) {
   if (!result?.ok || result.portraitNotice !== PORTRAIT_NOTICE.TOO_LARGE) return null;
-  return game.i18n.format("JDRNINJA_ATLAS_SYNC.notify.portraitTooLarge", { size: portraitLimitMegabytes() });
+  return game.i18n.format("JDRNINJA.atlas.notify.portraitTooLarge", { size: portraitLimitMegabytes() });
 }
 
 /**
@@ -112,7 +112,7 @@ export function portraitMessage(result) {
 export function resultMessage(result) {
   // Rate limited: the server tells us the cooldown remaining, so say when to retry.
   if (result.status === STATUS.RATE_LIMITED && result.body?.retryAfterSeconds > 0) {
-    return game.i18n.format("JDRNINJA_ATLAS_SYNC.status.RATE_LIMITED_RETRY", {
+    return game.i18n.format("JDRNINJA.atlas.status.RATE_LIMITED_RETRY", {
       delay: formatRetryDelay(result.body.retryAfterSeconds),
     });
   }
@@ -125,7 +125,7 @@ export function resultMessage(result) {
 }
 
 /** Surfaces an API result to the user as a localized notification, plus a portrait left out. */
-export function notify(result, successKey = "JDRNINJA_ATLAS_SYNC.notify.synced") {
+export function notify(result, successKey = "JDRNINJA.atlas.notify.synced") {
   if (result.ok) {
     ui.notifications.info(game.i18n.localize(successKey));
     const portrait = portraitMessage(result);

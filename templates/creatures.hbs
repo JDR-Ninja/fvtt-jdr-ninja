@@ -1,21 +1,16 @@
 <div class="standard-form jn-layout jn-creatures">
   <div class="jn-scroll">
-    <header class="jn-creature-header">
-      <div class="jn-creature-bar">
-        <div class="jn-toolbar jn-creature-states">
-          <span class="jn-pill jn-pill--{{compatibility.level}}" role="status" data-compatibility="{{compatibility.code}}"><i class="fa-solid {{compatibility.icon}}" aria-hidden="true"></i> {{compatibility.label}}</span>
-          <span class="jn-creature-status" aria-live="polite">{{#if status.pill}}<span class="jn-pill jn-pill--{{status.pill.level}}"><i class="fa-solid {{status.pill.icon}}" aria-hidden="true"></i> {{status.pill.label}}</span>{{/if}}</span>
-        </div>
-        <div class="jn-toolbar jn-creature-tools">
-          <button type="button" data-action="connections"><i class="fa-solid fa-plug" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.connections"}}</button>
-          <button type="button" data-action="check" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.check"}}</button>
-        </div>
-      </div>
-      <p class="jn-muted jn-creature-system">{{compatibility.current}}<i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img" aria-label="{{localize "JDRNINJA.creatures.error.incompatibleSystem"}}" data-tooltip="{{localize "JDRNINJA.creatures.error.incompatibleSystem"}}"></i></p>
-    </header>
-    {{#if status.message}}<p class="notice notice-warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{status.message}}</p>{{/if}}
-    {{#if showSubscriptionLink}}<p class="jn-creature-link"><a href="{{subscriptionsUrl}}" target="_blank" rel="noopener noreferrer" data-jdr-subscriptions="creatures"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.subscription"}}</a></p>{{/if}}
+    {{#if status}}<div class="jn-status-line" data-status="{{status.state}}">
+      {{#if status.pill}}<span class="jn-pill jn-pill--{{status.pill.level}}" role="status"><i class="fa-solid {{status.pill.icon}}" aria-hidden="true"></i> {{status.pill.label}}</span>{{/if}}
+      {{#if status.step}}<div class="notice notice-{{status.step.level}}">
+        {{#if status.step.text}}<p role="{{status.step.role}}">{{status.step.text}}</p>{{/if}}
+        {{#if status.step.detail}}<p>{{status.step.detail}}</p>{{/if}}
+        {{#if status.step.action}}<button type="button" data-action="{{status.step.action.name}}"><i class="fa-solid {{status.step.action.icon}}" aria-hidden="true"></i> {{status.step.action.label}}</button>{{/if}}
+        {{#if status.step.link}}<a href="{{status.step.link.href}}" target="_blank" rel="noopener noreferrer" data-jdr-subscriptions="{{status.step.link.kind}}">{{status.step.link.label}}</a>{{/if}}
+      </div>{{/if}}
+    </div>{{/if}}
     {{#if error}}<p class="notice notice-error" role="alert"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> {{error}}</p>{{/if}}
+    {{#if showSubscriptionLink}}<p class="jn-creature-link"><a href="{{subscriptionsUrl}}" target="_blank" rel="noopener noreferrer" data-jdr-subscriptions="creatures"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> {{localize "JDRNINJA.creatures.subscription"}}</a></p>{{/if}}
     {{#if cooldown}}<p class="notice notice-info" role="status"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> {{cooldownText}}</p>{{/if}}
     {{#if hasCatalog}}
       <div class="jn-section jn-creature-options" role="group" aria-label="{{title}}">

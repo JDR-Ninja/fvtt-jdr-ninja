@@ -34,6 +34,7 @@ const { MapImportPanel, MT, describeFailure, progressState } = await import("../
 const { renderMapButton, registerMapIntegration } = await import("../scripts/maps/integration.js");
 const { MapError, MAP_ERROR_CODES } = await import("../scripts/maps/errors.js");
 const { readMapArchive } = await import("../scripts/maps/zip.js");
+const { shortcutButton } = await import("../scripts/ui/directory.js");
 
 function render(context, strings = locales.en) {
   const renderer = Handlebars.create();
@@ -54,9 +55,9 @@ test("the window is one instance: opening it again brings it forward, and it is 
   reset();
   const first = MapImportPanel.open();
   assert(first instanceof MapImportPanel); assert(first.rendered);
-  assert.equal(MapImportPanel.open(), first); assert.equal(first.fronted, 1);
+  assert.equal(MapImportPanel.instance, first); assert.equal(MapImportPanel.open(), first); assert.equal(first.fronted, 1);
   first.minimized = true; MapImportPanel.open(); assert.equal(first.minimized, false);
-  await first.close();
+  await first.close(); assert.equal(MapImportPanel.instance, null, "closing releases the instance");
   assert.notEqual(MapImportPanel.open(), first, "a closed window is not reused");
   await MapImportPanel.instance.close();
   reset(locales.en, player);
@@ -64,6 +65,10 @@ test("the window is one instance: opening it again brings it forward, and it is 
   assert.deepEqual(warnings, [locales.en["JDRNINJA.maps.error.notGM"]]);
   assert.equal(MapImportPanel.instance, null);
   reset();
+});
+
+test("the window is 600 px wide, like the other feature windows", () => {
+  assert.equal(MapImportPanel.DEFAULT_OPTIONS.position.width, 600);
 });
 
 test("with no file chosen the window asks for one and the import button is off", async () => {
@@ -335,6 +340,19 @@ test("a GM gets one labelled shortcut in the Scenes directory's header actions, 
   view.buttons()[0].listeners.click();
   assert(MapImportPanel.instance?.rendered);
   await MapImportPanel.instance.close();
+});
+
+test("the Scenes shortcut is the button the shared directory helper builds", () => {
+  reset();
+  const view = directory();
+  renderMapButton(null, [view.root]);
+  const [button] = view.buttons();
+  const shared = shortcutButton({ className: "jdr-ninja-map-open", icon: "fa-solid fa-map", title: locales.en["JDRNINJA.maps.title"],
+    label: locales.en["JDRNINJA.maps.shortcut"], onClick() {} });
+  const describe = element => ({ className: element.className, type: element.type, attributes: element.attributes, text: element.textContent,
+    children: element.children.map(node => [node.tag, node.className, node.attributes, node.textContent]) });
+  assert.deepEqual(describe(button), describe(shared));
+  assert.equal(button.children.length, 2, "an icon and a label");
 });
 
 test("the shortcut joins the module's shared row, falls back to the footer or the root, and a player gets none", () => {

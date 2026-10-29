@@ -4,19 +4,15 @@ import { validateMacroDeclaration } from "./dispatcher.js";
 import { variableService } from "./service.js";
 import { requireValue } from "../stream-deck/protocol.js";
 import { VT, variableError, typedValue } from "./panel.js";
+import { openSingleton, releaseSingleton } from "../ui/window.js";
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
 export class MacroArgumentsPanel extends HandlebarsApplicationMixin(ApplicationV2) {
-  static _instance = null;
+  static instance = null;
   /** One window: the settings menu and the module API reuse it, and a reopen never redraws unsaved fields. */
-  static open() {
-    const panel = this._instance ??= new this();
-    if (!panel.rendered) panel.render({ force: true });
-    else { if (panel.minimized) void panel.maximize(); panel.bringToFront(); }
-    return panel;
-  }
+  static open() { return openSingleton(this); }
   static DEFAULT_OPTIONS = { id: "jdr-ninja-macro-arguments", classes: ["jdr-ninja"], tag: "div",
-    window: { title: `${I18N}.variables.menu.macroArguments`, icon: "fa-solid fa-code", resizable: true }, position: { width: 720, height: 720 },
+    window: { title: `${I18N}.variables.menu.macroArguments`, icon: "fa-solid fa-code", resizable: true }, position: { width: 760, height: 720 },
     actions: Object.fromEntries(["load", "add", "remove", "save", "disable"].map(key => [key, function(_event, target) { return this.action(key, target); }])) };
   static PARTS = { body: { template: `modules/${MODULE_ID}/templates/macro-arguments.hbs`, scrollable: [".jn-scroll"] } };
   draft = { version: 1, arguments: [] }; macroId = ""; dirty = false; message = ""; base = undefined;
@@ -65,5 +61,5 @@ export class MacroArgumentsPanel extends HandlebarsApplicationMixin(ApplicationV
     finally { if (this.rendered) await this.render(); }
   }
   async close(options) { if (this.dirty && !await DialogV2.confirm({ window: { title: VT("discardTitle") }, content: VT("discard") })) return this;
-    if (MacroArgumentsPanel._instance === this) MacroArgumentsPanel._instance = null; return super.close(options); }
+    releaseSingleton(this); return super.close(options); }
 }

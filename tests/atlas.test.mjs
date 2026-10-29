@@ -16,8 +16,11 @@ class App {
 class ForcedDeletion {}
 globalThis.foundry = { applications: { api: { ApplicationV2: App, HandlebarsApplicationMixin: base => base } },
   data: { operators: { ForcedDeletion } } };
-const { AtlasSyncApp, rowStatus, connectionStatus, formatSyncedAt } = await import("../scripts/atlas/sync-app.js");
+const { AtlasSyncApp, rowStatus, connectionStatus } = await import("../scripts/atlas/sync-app.js");
 const { refreshAtlasIntegration, atlasContextOptions, renderAtlasButton } = await import("../scripts/atlas/integration.js");
+const { formatMoment } = await import("../scripts/ui/format.js");
+const { shortcutButton } = await import("../scripts/ui/directory.js");
+const { PILL_ICONS, PROGRESS_ICON } = await import("../scripts/ui/states.js");
 const originalFetch = globalThis.fetch;
 const copy = JSON.parse(await readFile(new URL("../lang/fr.json", import.meta.url), "utf8"));
 let settings, actors, requests, notices;
@@ -67,7 +70,7 @@ function serve(pc, image, answer) {
   return posted;
 }
 
-const portraitTooLarge = copy["JDRNINJA_ATLAS_SYNC.notify.portraitTooLarge"].replace("{size}", "2");
+const portraitTooLarge = copy["JDRNINJA.atlas.notify.portraitTooLarge"].replace("{size}", "2");
 
 beforeEach(() => {
   settings = new Map([["atlasEnabled", true], ["atlasToken", "fixture-atlas-token"],
@@ -89,7 +92,7 @@ beforeEach(() => {
     requests.push({ url, options });
     return reply({ status: "OK", syncedAtUtc: "2026-10-03T12:00:00Z", portrait: "unchanged" });
   };
-  AtlasSyncApp._instance = null;
+  AtlasSyncApp.instance = null;
 });
 
 afterEach(() => { cancelAtlasRequests(); globalThis.fetch = originalFetch; });
@@ -116,6 +119,10 @@ class FakeNode {
     Object.assign(this, { tagName: tag, className, children: [], parentElement: null, textContent: "", attributes: new Map(), listeners: new Map() });
   }
   get classList() { return { contains: name => this.className.split(/\s+/).includes(name) }; }
+  get childElementCount() { return this.children.length; }
+  querySelectorAll(selector) {
+    return this.children.flatMap(child => [...(child.classList.contains(selector.slice(1)) ? [child] : []), ...child.querySelectorAll(selector)]);
+  }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   addEventListener(type, listener) { this.listeners.set(type, listener); }
   append(...nodes) { for (const node of nodes) { node.remove(); node.parentElement = this; this.children.push(node); } }
@@ -177,13 +184,18 @@ test("the Atlas shortcut is an icon, a short label and the full title as tooltip
   const [button] = view.actions.children[2].children;
   assert.equal(button.tagName, "button");
   assert.equal(button.type, "button");
-  assert.equal(button.attributes.get("data-tooltip"), copy["JDRNINJA_ATLAS_SYNC.app.title"]);
-  assert.equal(button.attributes.get("aria-label"), copy["JDRNINJA_ATLAS_SYNC.app.title"]);
+  assert.equal(button.attributes.get("data-tooltip"), copy["JDRNINJA.atlas.app.title"]);
+  assert.equal(button.attributes.get("aria-label"), copy["JDRNINJA.atlas.app.title"]);
   const [icon, label] = button.children;
   assert.equal(icon.className, "fa-solid fa-globe");
   assert.equal(icon.attributes.get("aria-hidden"), "true");
-  assert.equal(label.textContent, copy["JDRNINJA_ATLAS_SYNC.app.openButton"]);
-  assert(label.textContent.length < copy["JDRNINJA_ATLAS_SYNC.app.title"].length, "the visible label is the short one");
+  assert.equal(label.textContent, copy["JDRNINJA.atlas.app.openButton"]);
+  assert(label.textContent.length < copy["JDRNINJA.atlas.app.title"].length, "the visible label is the short one");
+  // The button is the one the shared directory helper builds, not a copy of it.
+  const shared = shortcutButton({ className: "jdr-ninja-atlas-open", icon: "fa-solid fa-globe", label: label.textContent,
+    title: copy["JDRNINJA.atlas.app.title"], onClick() {} });
+  assert.deepEqual([button.className, button.type, [...button.attributes], button.children.map(node => [node.tagName, node.className, node.textContent])],
+    [shared.className, shared.type, [...shared.attributes], shared.children.map(node => [node.tagName, node.className, node.textContent])]);
   // Rendering again, as every directory refresh does, never doubles the button or the row.
   renderAtlasButton(null, view.html); renderAtlasButton(null, view.html);
   assert.equal(rowIn(view.actions).length, 1);
@@ -214,12 +226,28 @@ test("the Atlas shortcut joins a row the creature shortcuts made first, and stay
   assert.equal(rowIn(view.actions).length, 1);
 });
 
-test("without `.header-actions` the shortcut falls back to the directory header, then its footer, then the root", () => {
+test("the Atlas shortcut stays first in the shared row when the other integration adds its buttons after it", () => {
+  globalThis.document = { createElement: tag => new FakeNode(tag) };
+  const view = directory();
+  renderAtlasButton(null, view.html);
+  const [row] = rowIn(view.actions);
+  // The generators render second: they find the row Atlas made and append to it.
+  row.append(new FakeNode("button", "jdr-ninja-creature-open jn-directory-button"), new FakeNode("button", "jdr-ninja-creature-open jn-directory-button"));
+  assert.equal(row.children[0].className, "jdr-ninja-atlas-open jn-directory-button");
+  // A later directory refresh draws Atlas again: still one button, still first, and still one row.
+  renderAtlasButton(null, view.html);
+  assert.equal(rowIn(view.actions).length, 1); assert.equal(rowIn(view.actions)[0], row);
+  assert.deepEqual(labels(row), ["jdr-ninja-atlas-open jn-directory-button", "jdr-ninja-creature-open jn-directory-button",
+    "jdr-ninja-creature-open jn-directory-button"]);
+});
+
+test("without `.header-actions` the shortcut falls back to the directory footer, then the root", () => {
   globalThis.document = { createElement: tag => new FakeNode(tag) };
   const withHeader = directory({ headerActions: false });
   renderAtlasButton(null, withHeader.html);
-  assert.equal(rowIn(withHeader.header).length, 1);
-  assert.equal(rowIn(withHeader.header)[0].children[0].className, "jdr-ninja-atlas-open jn-directory-button");
+  assert.equal(rowIn(withHeader.footer).length, 1);
+  assert.equal(rowIn(withHeader.footer)[0].children[0].className, "jdr-ninja-atlas-open jn-directory-button");
+  assert.equal(rowIn(withHeader.header).length, 0, "the shared helper does not use the directory header");
 
   const footerOnly = directory({ headerActions: false });
   footerOnly.header.remove();
@@ -235,28 +263,28 @@ test("without `.header-actions` the shortcut falls back to the directory header,
 test("a sync date follows Foundry's language, short and without seconds, and an unreadable one shows nothing", () => {
   const moment = "2026-10-08T19:30:45.000Z";
   const plain = text => text.replace(/\s/g, " ");
-  assert.equal(plain(formatSyncedAt(moment, "en", { timeZone: "UTC" })), "Oct 8, 2026, 7:30 PM");
-  const french = formatSyncedAt(moment, "fr", { timeZone: "UTC" });
+  assert.equal(plain(formatMoment(moment, "en", { timeZone: "UTC" })), "Oct 8, 2026, 7:30 PM");
+  const french = formatMoment(moment, "fr", { timeZone: "UTC" });
   assert.match(french, /19:30/); assert.match(french, /2026/); assert.match(french, /oct/);
-  assert.notEqual(french, formatSyncedAt(moment, "en", { timeZone: "UTC" }));
-  for (const locale of ["en", "fr", "es", "de", "it"]) assert.doesNotMatch(formatSyncedAt(moment, locale, { timeZone: "UTC" }), /:45/, locale);
+  assert.notEqual(french, formatMoment(moment, "en", { timeZone: "UTC" }));
+  for (const locale of ["en", "fr", "es", "de", "it"]) assert.doesNotMatch(formatMoment(moment, locale, { timeZone: "UTC" }), /:45/, locale);
   // Same moment, another zone: the formatter shows the viewer's clock, not UTC.
-  assert.notEqual(formatSyncedAt(moment, "en", { timeZone: "Asia/Tokyo" }), formatSyncedAt(moment, "en", { timeZone: "UTC" }));
-  for (const value of [null, undefined, "", "not a date"]) assert.equal(formatSyncedAt(value, "en"), null, String(value));
+  assert.notEqual(formatMoment(moment, "en", { timeZone: "Asia/Tokyo" }), formatMoment(moment, "en", { timeZone: "UTC" }));
+  for (const value of [null, undefined, "", "not a date"]) assert.equal(formatMoment(value, "en"), null, String(value));
   // A language tag the browser does not know falls back to its own, instead of breaking the window.
-  assert.match(formatSyncedAt(moment, "not_a_locale", { timeZone: "UTC" }), /2026/);
+  assert.match(formatMoment(moment, "not_a_locale", { timeZone: "UTC" }), /2026/);
 });
 
-test("pill levels: a row follows its link, the header follows the connection", () => {
+test("pill levels: a row follows its link, the header follows the connection with the shared level icons", () => {
   assert.deepEqual(rowStatus({ linked: false, synced: false }), { state: "unlinked", level: "neutral", icon: "fa-link-slash" });
   assert.deepEqual(rowStatus({ linked: false, synced: true }), { state: "unlinked", level: "neutral", icon: "fa-link-slash" });
   assert.deepEqual(rowStatus({ linked: true, synced: false }), { state: "linked", level: "info", icon: "fa-link" });
-  assert.deepEqual(rowStatus({ linked: true, synced: true }), { state: "synced", level: "success", icon: "fa-circle-check" });
-  assert.deepEqual(connectionStatus({ connected: true, loading: false, failed: false }), { state: "connected", level: "success", icon: "fa-circle-check" });
+  assert.deepEqual(rowStatus({ linked: true, synced: true }), { state: "synced", level: "success", icon: PILL_ICONS.success });
+  assert.deepEqual(connectionStatus({ connected: true, loading: false, failed: false }), { state: "connected", level: "success", icon: PILL_ICONS.success });
   assert.equal(connectionStatus({ connected: true, loading: true, failed: true }).state, "connected");
-  assert.deepEqual(connectionStatus({ connected: false, loading: true, failed: false }), { state: "loading", level: "info", icon: "fa-spinner fa-spin" });
-  assert.deepEqual(connectionStatus({ connected: false, loading: false, failed: true }), { state: "disconnected", level: "error", icon: "fa-circle-xmark" });
-  assert.equal(connectionStatus({ connected: false, loading: false, failed: false }).level, "neutral");
+  assert.deepEqual(connectionStatus({ connected: false, loading: true, failed: false }), { state: "loading", level: "info", icon: PROGRESS_ICON });
+  assert.deepEqual(connectionStatus({ connected: false, loading: false, failed: true }), { state: "disconnected", level: "error", icon: PILL_ICONS.error });
+  assert.deepEqual(connectionStatus({ connected: false, loading: false, failed: false }), { state: "disconnected", level: "neutral", icon: PILL_ICONS.neutral });
 });
 
 /** The window's context for a world with one synced, one linked-but-never-synced and one unlinked character. */
@@ -280,17 +308,17 @@ test("each row's pill, date and message come from its link and its last sync res
   } });
   const row = actor => context.rows.find(candidate => candidate.actorId === actor.id);
   assert.deepEqual([row(synced).status.state, row(synced).status.level], ["synced", "success"]);
-  assert.equal(row(synced).status.label, copy["JDRNINJA_ATLAS_SYNC.row.synced"]);
-  assert.equal(row(synced).syncedLabel, formatSyncedAt("2026-10-08T19:30:00Z", undefined));
+  assert.equal(row(synced).status.label, copy["JDRNINJA.atlas.row.synced"]);
+  assert.equal(row(synced).syncedLabel, formatMoment("2026-10-08T19:30:00Z", undefined));
   assert.equal(row(synced).error, portraitTooLarge);
   assert.equal(row(synced).errorLevel, "warning");
   assert.deepEqual([row(waiting).status.state, row(waiting).status.level], ["linked", "info"]);
-  assert.equal(row(waiting).status.label, copy["JDRNINJA_ATLAS_SYNC.row.linked"]);
+  assert.equal(row(waiting).status.label, copy["JDRNINJA.atlas.row.linked"]);
   assert.equal(row(waiting).syncedLabel, null);
-  assert.equal(row(waiting).error, copy["JDRNINJA_ATLAS_SYNC.status.NETWORK_ERROR"]);
+  assert.equal(row(waiting).error, copy["JDRNINJA.atlas.status.NETWORK_ERROR"]);
   assert.equal(row(waiting).errorLevel, "error");
   assert.deepEqual([row(free).status.state, row(free).status.level], ["unlinked", "neutral"]);
-  assert.equal(row(free).status.label, copy["JDRNINJA_ATLAS_SYNC.row.unlinked"]);
+  assert.equal(row(free).status.label, copy["JDRNINJA.atlas.row.unlinked"]);
   assert.equal(row(free).error, null);
   // A clean result, a successful unlink or a reload drops the message and its level together.
   app._recordRowResult(waiting, { ok: true });
@@ -301,16 +329,49 @@ test("each row's pill, date and message come from its link and its last sync res
   assert.equal(app._syncErrors.size, 0); assert.equal(app._syncLevels.size, 0);
 });
 
-test("the header pill reads connected, loading or not connected, with the world only once connected", async () => {
+test("the header has no pill once connected; it shows the world, a loading pill while loading and an error pill on failure", async () => {
   const label = key => copy[key];
   const connected = (await windowContext()).context;
-  assert.deepEqual([connected.connection.level, connected.connection.label, connected.worldName],
-    ["success", label("JDRNINJA.status.connected"), "The Sunken Crown"]);
+  assert.equal(connected.connection, null, "connected is the normal state: no pill");
+  assert.equal(connected.worldName, "The Sunken Crown");
   const loading = (await windowContext({ data: { loading: true, whoami: null, campaigns: [], error: null } })).context;
-  assert.deepEqual([loading.connection.level, loading.connection.label], ["info", label("JDRNINJA_ATLAS_SYNC.app.loading")]);
+  assert.deepEqual([loading.connection.level, loading.connection.icon, loading.connection.label],
+    ["info", PROGRESS_ICON, label("JDRNINJA.atlas.app.loading")]);
   const failed = (await windowContext({ data: { loading: false, whoami: null, campaigns: [], error: "INVALID_TOKEN" } })).context;
-  assert.deepEqual([failed.connection.level, failed.connection.label], ["error", label("JDRNINJA_ATLAS_SYNC.app.disconnected")]);
+  assert.deepEqual([failed.connection.level, failed.connection.icon, failed.connection.label],
+    ["error", PILL_ICONS.error, label("JDRNINJA.status.disconnected")]);
+  assert.equal(failed.error, label("JDRNINJA.atlas.status.INVALID_TOKEN"), "the failure keeps its message");
   assert.equal(failed.worldName, "");
+});
+
+test("opening the window shows the loading pill, then the error pill and the message when the request fails", async () => {
+  const source = await readFile(new URL("../templates/atlas-sync.hbs", import.meta.url), "utf8");
+  const handlebars = Handlebars.create();
+  handlebars.registerHelper("localize", key => copy[key] ?? key);
+  /** A fresh window as `open()` leaves it, and every rendering of it while its data loads. */
+  const opened = async () => {
+    const shown = [], app = new AtlasSyncApp();
+    app.render = async () => { app.rendered = true; shown.push(handlebars.compile(source)(await app._prepareContext())); return app; };
+    await app.loadData();
+    return shown;
+  };
+  const header = html => html.match(/<header class="jn-atlas-header">[\s\S]*?<\/header>/)[0];
+  globalThis.fetch = async () => reply({ status: "INVALID_TOKEN" }, 401);
+  const shown = await opened();
+  assert.equal(shown.length, 2, "one render when the load starts, one when it ends");
+  assert(header(shown[0]).includes("jn-pill--info") && header(shown[0]).includes("fa-spinner fa-spin"));
+  assert(header(shown[0]).includes(copy["JDRNINJA.atlas.app.loading"]));
+  assert(header(shown[1]).includes("jn-pill--error"));
+  assert(header(shown[1]).includes(copy["JDRNINJA.status.disconnected"]));
+  assert(shown[1].includes(Handlebars.escapeExpression(copy["JDRNINJA.atlas.status.INVALID_TOKEN"])), "the failure keeps its message");
+  // A successful load takes the pill away and leaves the world, the system and the refresh button.
+  globalThis.fetch = async url => reply(url.endsWith("/whoami") ? { status: "OK", world: { name: "The Sunken Crown" }, tier: { allowed: true } }
+    : { status: "OK", items: [] });
+  const [starting, connected] = await opened();
+  assert(header(starting).includes("jn-pill--info"));
+  assert(!header(connected).includes("jn-pill"), "no connected pill");
+  assert(header(connected).includes('<span class="jn-atlas-world">The Sunken Crown</span>'));
+  assert(header(connected).includes('data-action="refresh"'));
 });
 
 test("the context-menu entry exists from the first render and follows the switch, the GM role and the actor type", async () => {
@@ -320,7 +381,7 @@ test("the context-menu entry exists from the first render and follows the switch
   npc.type = "npc";
   // V14 collects the entries once; enabling Atlas later must not need another collection.
   const entry = contextEntry();
-  assert.equal(entry.label, "JDRNINJA_ATLAS_SYNC.context.sync");
+  assert.equal(entry.label, "JDRNINJA.atlas.context.sync");
   assert.equal(typeof entry.onClick, "function");
   for (const deprecated of ["name", "condition", "callback"]) assert.equal(deprecated in entry, false, deprecated);
   assert.equal(entry.visible(directoryEntry(pc.id)), false);
@@ -336,7 +397,7 @@ test("the context-menu entry exists from the first render and follows the switch
   await entry.onClick({}, directoryEntry(pc.id));
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, "https://www.jdr.ninja/api/foundry/v1/atlas/characters/atlas-menu");
-  assert.deepEqual(notices, [copy["JDRNINJA_ATLAS_SYNC.notify.synced"]]);
+  assert.deepEqual(notices, [copy["JDRNINJA.atlas.notify.synced"]]);
 });
 
 test("a successful legacy-linked sync preserves the link and promotes its metadata to the unified namespace", async () => {
@@ -403,7 +464,7 @@ test("a response without the Atlas envelope is a network, too-large or server fa
   }
   assert.deepEqual(pc.flags, before);
   for (const status of ["NETWORK_ERROR", "REQUEST_TOO_LARGE", "SERVER_ERROR"]) {
-    assert.equal(resultMessage({ ok: false, status, body: {} }), copy[`JDRNINJA_ATLAS_SYNC.status.${status}`]);
+    assert.equal(resultMessage({ ok: false, status, body: {} }), copy[`JDRNINJA.atlas.status.${status}`]);
   }
 });
 
@@ -421,7 +482,7 @@ test("a portrait too large for the write cap is left out: the sheet syncs, the h
   assert.equal(body.systemSlug, "dnd5e-compatible");
   assert.equal(getLink(pc).syncedAtUtc, "2026-10-07T12:00:00Z");
   assert.equal(getLink(pc).portraitHash, "previous-hash");
-  assert.deepEqual(notices, [copy["JDRNINJA_ATLAS_SYNC.notify.synced"], portraitTooLarge]);
+  assert.deepEqual(notices, [copy["JDRNINJA.atlas.notify.synced"], portraitTooLarge]);
   assert.match(portraitTooLarge, /moins de 2 Mo/);
 });
 
@@ -454,7 +515,7 @@ test("creation leaves a too-large portrait out too, and the window row and notif
   assert.equal(getLink(pc).atlasCharacterId, "created-big");
   assert.equal(getLink(pc).portraitHash, null);
   assert.equal(app._syncErrors.get(pc.id), portraitTooLarge);
-  assert.deepEqual(notices, [copy["JDRNINJA_ATLAS_SYNC.notify.created"], portraitTooLarge]);
+  assert.deepEqual(notices, [copy["JDRNINJA.atlas.notify.created"], portraitTooLarge]);
 
   // A later sync with a lighter image sends it and clears the row warning.
   notices.length = 0;
@@ -462,7 +523,7 @@ test("creation leaves a too-large portrait out too, and the window row and notif
   await app._onSync(null, { closest: () => ({ dataset: { actorId: pc.id } }) });
   assert.equal(app._syncErrors.has(pc.id), false);
   assert.match(getLink(pc).portraitHash, /^[0-9a-f]{64}$/);
-  assert.deepEqual(notices, [copy["JDRNINJA_ATLAS_SYNC.notify.synced"]]);
+  assert.deepEqual(notices, [copy["JDRNINJA.atlas.notify.synced"]]);
 });
 
 test("a batch names the characters whose portrait was left out, beside the usual summary", async () => {
@@ -479,7 +540,7 @@ test("a batch names the characters whose portrait was left out, beside the usual
   await app._onSyncAll();
   assert.equal(app._syncErrors.get(big.id), portraitTooLarge);
   assert.equal(app._syncErrors.has("batch-plain"), false);
-  const format = (key, values) => copy[`JDRNINJA_ATLAS_SYNC.notify.${key}`].replace(/\{(\w+)\}/g, (_, name) => values[name]);
+  const format = (key, values) => copy[`JDRNINJA.atlas.notify.${key}`].replace(/\{(\w+)\}/g, (_, name) => values[name]);
   assert(notices.includes(format("batchDone", { ok: 2, failed: 0 })));
   assert(notices.includes(format("batchPortraitTooLarge", { count: 1, names: big.name, size: 2 })));
 });
@@ -543,7 +604,7 @@ test("disabling aborts an in-flight sync request and closes the active sync wind
     signal = options.signal;
     return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
   };
-  const app = AtlasSyncApp._instance = new AtlasSyncApp();
+  const app = AtlasSyncApp.instance = new AtlasSyncApp();
   app.rendered = true;
   const pending = pushActor(pc);
   await new Promise(resolve => setImmediate(resolve));
@@ -577,7 +638,7 @@ test("disabling also aborts portrait loading and releases the actor for a later 
 test("reopening after a settings change uses a fresh window while the cancelled load finishes", async () => {
   const releases = [];
   globalThis.fetch = async () => new Promise(resolve => { releases.push(resolve); });
-  const previous = AtlasSyncApp._instance = new AtlasSyncApp();
+  const previous = AtlasSyncApp.instance = new AtlasSyncApp();
   const loading = previous.loadData();
   await new Promise(resolve => setImmediate(resolve));
   settings.set("atlasEnabled", false);
@@ -620,7 +681,7 @@ test("batch sync stops before the next actor when integration is disabled", asyn
   await app._onSyncAll();
   assert.equal(requests.length, 1);
   assert.equal(getLink(actors.get("second")).syncedAtUtc, undefined);
-  assert(notices.includes(copy["JDRNINJA_ATLAS_SYNC.status.OPERATION_CANCELLED"]));
+  assert(notices.includes(copy["JDRNINJA.atlas.status.OPERATION_CANCELLED"]));
 });
 
 test("link picker follows pagination and escapes character names", async () => {
@@ -675,15 +736,15 @@ test("the Atlas window is a layout of header, controls, a card per character and
     const html = handlebars.compile(source)(context);
     assert(!html.includes("JDRNINJA"), locale);
     // Structure: one root layout, a scrolling list, a footer; no fieldset and no loose button bars.
-    assert.match(html, /^<div class="standard-form jn-layout atlas-sync">/);
+    assert.match(html, /^<div class="standard-form jn-layout jn-atlas">/);
     assert.equal(tagsWithClass(html, "div", "jn-scroll").length, 1, locale);
     assert.equal(tagsWithClass(html, "footer", "jn-footer").length, 1, locale);
     assert(!html.includes("<fieldset"), locale);
-    assert(html.indexOf('class="atlas-sync__header"') < html.indexOf('data-control="campaign"'));
-    // Header: the connection pill, then the world and the system as plain text.
-    assert.match(html, /<header class="atlas-sync__header">\s*<span class="jn-pill jn-pill--success">/);
-    assert(html.includes('<span class="atlas-sync__world">The Sunken Crown</span>'));
-    assert(html.includes('<span class="jn-muted atlas-sync__system">'));
+    assert(html.indexOf('class="jn-atlas-header"') < html.indexOf('data-control="campaign"'));
+    // Header: the world, the system and the refresh button as plain text and controls; no pill once connected.
+    assert.match(html, /<header class="jn-atlas-header">\s*<span class="jn-atlas-world">The Sunken Crown<\/span>/);
+    assert(!html.match(/<header[\s\S]*?<\/header>/)[0].includes("jn-pill"), "a connected window has no connection pill");
+    assert(html.includes('<span class="jn-muted jn-atlas-system">'));
     assert(!/class="badge/.test(html), locale);
     // The single primary action is "Sync all", in the footer.
     const bright = tagsWithClass(html, "button", "bright");
@@ -699,17 +760,17 @@ test("the Atlas window is a layout of header, controls, a card per character and
     const cards = tagsWithClass(html, "li", "jn-card");
     assert.deepEqual(cards.map(card => card.match(/data-actor-id="([\w-]+)"/)[1]).sort(), [free.id, synced.id, waiting.id].sort());
     const flat = html.replace(/\s+/g, " ");
-    assert(flat.includes(`jn-pill--success"> <i class="fa-solid fa-circle-check" aria-hidden="true"></i> ${strings["JDRNINJA_ATLAS_SYNC.row.synced"]} </span>`));
-    assert(flat.includes(`jn-pill--info"> <i class="fa-solid fa-link" aria-hidden="true"></i> ${strings["JDRNINJA_ATLAS_SYNC.row.linked"]} </span>`));
-    assert(flat.includes(`jn-pill--neutral"> <i class="fa-solid fa-link-slash" aria-hidden="true"></i> ${strings["JDRNINJA_ATLAS_SYNC.row.unlinked"]} </span>`));
-    assert(html.includes(`<span class="jn-muted">${formatSyncedAt("2026-10-08T19:30:00Z", locale)}</span>`), locale);
+    assert(flat.includes(`jn-pill--success"> <i class="fa-solid fa-circle-check" aria-hidden="true"></i> ${strings["JDRNINJA.atlas.row.synced"]} </span>`));
+    assert(flat.includes(`jn-pill--info"> <i class="fa-solid fa-link" aria-hidden="true"></i> ${strings["JDRNINJA.atlas.row.linked"]} </span>`));
+    assert(flat.includes(`jn-pill--neutral"> <i class="fa-solid fa-link-slash" aria-hidden="true"></i> ${strings["JDRNINJA.atlas.row.unlinked"]} </span>`));
+    assert(html.includes(`<span class="jn-muted">${formatMoment("2026-10-08T19:30:00Z", locale)}</span>`), locale);
     assert(html.includes('class="notice notice-error"'), "a failed sync shows its message at error level");
     // "Sync" is an icon button with its name and tooltip; "Unlink" is the destructive style; the rest stay plain.
     const sync = tagsWithClass(html, "button", "jn-icon-button").filter(button => button.includes('data-action="sync"'));
     assert.equal(sync.length, 2, "a linked character has it, whether synced or not");
     for (const button of sync) {
-      assert(button.includes(`aria-label="${strings["JDRNINJA_ATLAS_SYNC.row.sync"]}"`), locale);
-      assert(button.includes(`data-tooltip="${strings["JDRNINJA_ATLAS_SYNC.row.sync"]}"`), locale);
+      assert(button.includes(`aria-label="${strings["JDRNINJA.atlas.row.sync"]}"`), locale);
+      assert(button.includes(`data-tooltip="${strings["JDRNINJA.atlas.row.sync"]}"`), locale);
     }
     const unlink = tagsWithClass(html, "button", "jn-danger");
     assert.equal(unlink.length, 2); assert(unlink.every(button => button.includes('data-action="unlink"')));
@@ -729,10 +790,11 @@ test("while connecting the window shows the loading pill and no character, and w
   const { context } = await windowContext({ data: { loading: true, whoami: null, campaigns: [], error: null } });
   const loading = handlebars.compile(source)(context);
   assert(loading.includes("jn-pill--info"));
-  assert(loading.includes(copy["JDRNINJA_ATLAS_SYNC.app.loading"]));
-  assert(!loading.includes("atlas-sync__rows"));
+  assert(loading.includes(`class="fa-solid ${PROGRESS_ICON}"`));
+  assert(loading.includes(copy["JDRNINJA.atlas.app.loading"]));
+  assert(!loading.includes("jn-atlas-rows"));
   assert(loading.includes('aria-busy="true"'));
-  assert(!loading.includes('class="atlas-sync__world"'), "no world before the connection");
+  assert(!loading.includes('class="jn-atlas-world"'), "no world before the connection");
   settings.set("atlasEnabled", false);
   const blocked = handlebars.compile(source)(await new AtlasSyncApp()._prepareContext());
   assert(blocked.includes("notice-warning"));

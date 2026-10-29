@@ -10,13 +10,17 @@ export const LEGACY_MODULE_ID = "jdr-ninja-atlas-sync";
  * The game systems this module can sync, keyed by Foundry `game.system.id`. Per entry: `min` is the
  * lowest system version whose data paths the matching converter was checked against (older → the
  * guard reports tooOld), `atlasSlug` is the Atlas RPG module the sheet is validated and stored under
- * (sent as `systemSlug`, alongside `sourceSystemId` = the key). The guard (system-guard.js), the
+ * (sent as `systemSlug`, alongside `sourceSystemId` = the key), and the optional `actorTypes` lists
+ * the Foundry actor types that are player characters for that system and can sync (default
+ * `["character"]`; see `isSyncableActor`). The guard (system-guard.js), the
  * converter dispatch (converters/index.js) and the payload (converter.js) all read this table, so
  * adding a system is one entry here + one converter file. tor2e's floor is the first release built
  * on Foundry data models (6.0.0); pf2e's is the last data-path move its converter reads (speeds at
  * `system.movement.speeds`, 7.5.0); sf2e's is the first release that can host a V14 module at all
  * (1.0.0), every path predating it; wfrp4e's is the first V13 line of that system (its data
- * migration has not moved since the V12 line; paths checked against 9.6.4).
+ * migration has not moved since the V12 line; paths checked against 9.6.4); daggerheart's and
+ * fallout's are their first V14 releases (2.0.0, paths checked against 2.0.0 and 2.10.7; 11.17.0,
+ * paths unchanged in 11.17.1).
  */
 export const SUPPORTED_SYSTEMS = {
   dnd5e: { min: "3.0.0", atlasSlug: "dnd5e-compatible" },
@@ -24,11 +28,33 @@ export const SUPPORTED_SYSTEMS = {
   pf2e: { min: "7.5.0", atlasSlug: "pf2e-compatible" },
   sf2e: { min: "1.0.0", atlasSlug: "sf2e-compatible" },
   wfrp4e: { min: "9.0.0", atlasSlug: "wfrp4e-compatible" },
+  daggerheart: { min: "2.0.0", atlasSlug: "daggerheart-compatible" },
+  // Fallout player characters are `character` actors, and Mister Handy PCs `robot` ones.
+  fallout: { min: "11.17.0", atlasSlug: "fallout-compatible", actorTypes: ["character", "robot"] },
 };
 
 /** The supported system ids as one readable list, for the guard messages ("dnd5e, wfrp4e"). */
 export function supportedSystemIds() {
   return Object.keys(SUPPORTED_SYSTEMS).join(", ");
+}
+
+/** The actor types a system syncs when its SUPPORTED_SYSTEMS entry has no `actorTypes`. */
+const DEFAULT_ACTOR_TYPES = ["character"];
+
+/** The actor types the given system (default: the active one) can sync. */
+export function syncableActorTypes(systemId = globalThis.game?.system?.id) {
+  const types = Object.hasOwn(SUPPORTED_SYSTEMS, systemId) ? SUPPORTED_SYSTEMS[systemId].actorTypes : undefined;
+  return Array.isArray(types) && types.length > 0 ? types : DEFAULT_ACTOR_TYPES;
+}
+
+/**
+ * True when `actor` is a player-character actor the active system can sync: its type is in the
+ * system's `actorTypes`. Every sync entry point (context menu, window, push/create) asks this instead
+ * of comparing `actor.type` to "character", so a system with another player-character type (a
+ * robot, say) is a one-line entry in SUPPORTED_SYSTEMS.
+ */
+export function isSyncableActor(actor, systemId = globalThis.game?.system?.id) {
+  return syncableActorTypes(systemId).includes(actor?.type);
 }
 
 /** World-scope settings keys. */
@@ -68,7 +94,7 @@ export const PORTRAIT_OUTCOME = {
 
 /**
  * Machine status codes. The module owns the localized string for each
- * (see lang/*.json `JDRNINJA_ATLAS_SYNC.status.<CODE>`); the server never localizes. The first
+ * (see lang/*.json `JDRNINJA.atlas.status.<CODE>`); the server never localizes. The first
  * ten come from the server's envelope; the others are set by the module itself, for a request that
  * never reached the server or came back without the envelope (NETWORK_ERROR, REQUEST_TOO_LARGE,
  * SERVER_ERROR) and for its own guards.
@@ -96,15 +122,15 @@ export const STATUS = {
 
 /** Localizes an API status code via the module's lang files. */
 export function localizeStatus(code) {
-  const key = `JDRNINJA_ATLAS_SYNC.status.${code}`;
+  const key = `JDRNINJA.atlas.status.${code}`;
   const translated = game.i18n.localize(key);
   // Fall back to a generic message if a new server code has no string yet.
-  return translated === key ? game.i18n.localize("JDRNINJA_ATLAS_SYNC.status.UNKNOWN") : translated;
+  return translated === key ? game.i18n.localize("JDRNINJA.atlas.status.UNKNOWN") : translated;
 }
 
 /**
  * The `errors[].code` values of a VALIDATION_FAILED response the module has a specific string for
- * (`JDRNINJA_ATLAS_SYNC.error.<CODE>`). The server also sends REQUIRED and VALIDATION_FAILED itself
+ * (`JDRNINJA.atlas.error.<CODE>`). The server also sends REQUIRED and VALIDATION_FAILED itself
  * as codes; those keep the generic status string, like any code added server-side later.
  */
 export const VALIDATION_ERROR = {
@@ -120,7 +146,7 @@ export const VALIDATION_ERROR = {
  */
 export function localizeValidationError(code) {
   if (typeof code !== "string" || !Object.hasOwn(VALIDATION_ERROR, code)) return null;
-  const key = `JDRNINJA_ATLAS_SYNC.error.${code}`;
+  const key = `JDRNINJA.atlas.error.${code}`;
   const translated = game.i18n.localize(key);
   return translated === key ? null : translated;
 }
@@ -130,7 +156,7 @@ export function formatRetryDelay(totalSeconds) {
   const s = Math.max(0, Math.round(Number(totalSeconds) || 0));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  const u = (unit) => game.i18n.localize(`JDRNINJA_ATLAS_SYNC.time.${unit}`);
+  const u = (unit) => game.i18n.localize(`JDRNINJA.atlas.time.${unit}`);
   const parts = [];
   if (h > 0) parts.push(`${h} ${u("hours")}`);
   if (m > 0) parts.push(`${m} ${u("minutes")}`);

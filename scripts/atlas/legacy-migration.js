@@ -67,6 +67,6 @@ export async function checkLegacyMigration() {
     }
   }
   if (game.modules?.get(LEGACY_MODULE_ID)?.active === true) {
-    ui.notifications.warn(game.i18n.localize("JDRNINJA_ATLAS_SYNC.status.LEGACY_MODULE_ACTIVE"), { permanent: true });
+    ui.notifications.warn(game.i18n.localize("JDRNINJA.atlas.status.LEGACY_MODULE_ACTIVE"), { permanent: true });
   }
 }

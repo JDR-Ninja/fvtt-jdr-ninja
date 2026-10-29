@@ -1,18 +1,11 @@
-<div class="standard-form jn-layout jdr-ninja__stream-deck">
+<div class="standard-form jn-layout jn-stream-deck">
   <div class="jn-scroll">
-    <div class="jdr-ninja__header">
-      <div class="form-group jdr-ninja__toggle">
-        <div class="form-fields">
-          <input id="jdr-stream-deck-enabled" name="streamDeckEnabled" type="checkbox" {{#if enabled}}checked{{/if}} {{#if busy}}disabled{{/if}}>
-          <label for="jdr-stream-deck-enabled">{{localize "JDRNINJA.streamDeck.enable"}}</label>
-          <i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img" aria-label="{{localize 'JDRNINJA.streamDeck.enableHint'}}" data-tooltip="{{localize 'JDRNINJA.streamDeck.enableHint'}}"></i>
-        </div>
-      </div>
-      <p class="jdr-ninja__status" aria-live="polite">
+    <div class="jn-status-line">
+      <p class="jn-status" aria-live="polite">
         <span class="jn-pill jn-pill--{{pill.level}}" data-stream-deck-status><i class="fa-solid {{pill.icon}}" aria-hidden="true" data-pill-icon></i><span data-pill-text>{{pill.label}}</span></span>
       </p>
+      <p class="notice notice-error" role="alert" data-stream-deck-error {{#unless error}}hidden{{/unless}}>{{error}}</p>
     </div>
-    <p class="notice notice-error" role="alert" data-stream-deck-error {{#unless error}}hidden{{/unless}}>{{error}}</p>
     <section class="jn-section">
       <h3 class="jn-section__title"><i class="fa-solid fa-plug" aria-hidden="true"></i>{{localize "JDRNINJA.streamDeck.connection"}}</h3>
       <div class="form-group">
@@ -41,14 +34,14 @@
       {{/if}}
     </section>
     <section class="jn-section">
-      <h3 class="jn-section__title"><i class="fa-solid fa-code" aria-hidden="true"></i>{{localize "JDRNINJA.streamDeck.variables"}}</h3>
+      <h3 class="jn-section__title"><i class="fa-solid fa-layer-group" aria-hidden="true"></i>{{localize "JDRNINJA.streamDeck.variables"}}</h3>
       <p class="hint">{{localize "JDRNINJA.variables.menu.hint"}}</p>
       <div class="jn-toolbar">
-        <button type="button" data-action="openVariables"><i class="fa-solid fa-code" aria-hidden="true"></i> {{localize "JDRNINJA.variables.menu.variables"}}</button>
-        <button type="button" data-action="openMacroArguments"><i class="fa-solid fa-terminal" aria-hidden="true"></i> {{localize "JDRNINJA.variables.menu.macroArguments"}}</button>
+        <button type="button" data-action="openVariables"><i class="fa-solid fa-sliders" aria-hidden="true"></i> {{localize "JDRNINJA.streamDeck.openVariables"}}</button>
+        <button type="button" data-action="openMacroArguments"><i class="fa-solid fa-code" aria-hidden="true"></i> {{localize "JDRNINJA.streamDeck.openMacros"}}</button>
       </div>
     </section>
-    <p class="hint jdr-ninja__note"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>{{localize "JDRNINJA.streamDeck.note"}}</p>
+    <p class="hint jn-note"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>{{localize "JDRNINJA.streamDeck.note"}}</p>
   </div>
   <footer class="form-footer jn-footer">
     <button type="button" class="bright" data-action="save" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> {{localize "JDRNINJA.streamDeck.save"}}</button>

@@ -1,9 +1,9 @@
-<div class="standard-form jn-layout jdr-ninja__connections">
+<div class="standard-form jn-layout jn-connections">
   <div class="jn-scroll">
-    <section class="jn-card jdr-ninja__banner" role="group" aria-labelledby="jdr-ninja-account-name" data-state="{{account.state}}">
-      <div class="jdr-ninja__head">
-        <i class="fa-solid fa-user-ninja jdr-ninja__icon" aria-hidden="true"></i>
-        <div class="jdr-ninja__name" aria-live="polite">
+    <section class="jn-card jn-banner" role="group" aria-labelledby="jdr-ninja-account-name" data-state="{{account.state}}">
+      <div class="jn-head">
+        <i class="fa-solid fa-user-ninja jn-icon" aria-hidden="true"></i>
+        <div class="jn-name" aria-live="polite">
           <h3 id="jdr-ninja-account-name" data-connection-label="account">{{#if account.label}}{{account.label}}{{else}}{{localize "JDRNINJA.account.heading"}}{{/if}}</h3>
           {{#if account.label}}<p class="jn-muted">{{localize "JDRNINJA.account.browser"}}</p>{{/if}}
         </div>
@@ -12,9 +12,9 @@
       {{#if account.intro}}<p class="jn-muted">{{account.intro}}</p>{{/if}}
       {{#if account.error}}<p role="alert" class="notice notice-error">{{account.error}}</p>{{/if}}
       {{#if challenge}}
-        <div class="notice notice-info jdr-ninja__pairing" role="status">
+        <div class="notice notice-info jn-pairing" role="status">
           <p>{{localize "JDRNINJA.pairing.instruction"}}</p>
-          <p><strong class="jdr-ninja__code">{{challenge.userCode}}</strong> <a href="{{challenge.verificationUrl}}" target="_blank" rel="noopener noreferrer">{{localize "JDRNINJA.pairing.open"}}</a></p>
+          <p><strong class="jn-pairing-code">{{challenge.userCode}}</strong> <a href="{{challenge.verificationUrl}}" target="_blank" rel="noopener noreferrer">{{localize "JDRNINJA.pairing.open"}}</a></p>
           {{#if pairingCreatures}}<p>{{localize "JDRNINJA.pairing.creatures"}}</p>{{/if}}
         </div>
       {{/if}}
@@ -27,23 +27,23 @@
     </section>
     <section class="jn-section">
       <h3 class="jn-section__title"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i>{{localize "JDRNINJA.panel.features"}}</h3>
-      <div class="jdr-ninja__features">
+      <div class="jn-features">
         {{#each features}}
-          <div class="jdr-ninja__feature" role="group" aria-labelledby="jdr-ninja-service-{{id}}" data-feature="{{id}}" data-state="{{state}}"{{#if compatibility}} data-compatibility="{{compatibility}}"{{/if}}>
-            <i class="fa-solid {{icon}} jdr-ninja__icon" aria-hidden="true"></i>
-            <div class="jdr-ninja__name">
+          <div class="jn-feature" role="group" aria-labelledby="jdr-ninja-service-{{id}}" data-feature="{{id}}" data-state="{{state}}"{{#if compatibility}} data-compatibility="{{compatibility}}"{{/if}}>
+            <i class="fa-solid {{icon}} jn-icon" aria-hidden="true"></i>
+            <div class="jn-name">
               <h4 id="jdr-ninja-service-{{id}}">{{name}}</h4>
               <p class="jn-muted">{{summary}}</p>
             </div>
             <span class="jn-pill jn-pill--{{pill.level}}" role="status"{{#if live}} data-stream-deck-status{{/if}}><i class="fa-solid {{pill.icon}}" aria-hidden="true" data-pill-icon></i><span data-pill-text>{{pill.label}}</span></span>
-            <div class="jdr-ninja__switch">
+            <div class="jn-switch">
               <input id="jdr-ninja-{{id}}-enabled" name="{{input}}" type="checkbox" aria-labelledby="jdr-ninja-{{id}}-enabled-label jdr-ninja-service-{{id}}" {{#if enabled}}checked{{/if}} {{#if @root.busy}}disabled{{/if}}>
               <label id="jdr-ninja-{{id}}-enabled-label" for="jdr-ninja-{{id}}-enabled">{{localize "JDRNINJA.panel.enable"}}</label>
               {{#if info}}<i class="fa-solid fa-circle-info jn-info" tabindex="0" role="img" aria-label="{{info}}" data-tooltip="{{info}}"></i>{{/if}}
             </div>
-            {{#if open}}<button type="button" class="jn-icon-button jdr-ninja__open" data-action="{{open.name}}" aria-label="{{open.label}}" data-tooltip="{{open.label}}" {{#if open.disabled}}disabled{{/if}}><i class="fa-solid {{open.icon}}" aria-hidden="true"></i></button>{{/if}}
+            {{#if open}}<button type="button" class="jn-icon-button jn-open" data-action="{{open.name}}" aria-label="{{open.label}}" data-tooltip="{{open.label}}" {{#if open.disabled}}disabled{{/if}}><i class="fa-solid {{open.icon}}" aria-hidden="true"></i></button>{{/if}}
             {{#if step}}
-              <div class="notice notice-{{step.level}} jdr-ninja__step">
+              <div class="notice notice-{{step.level}} jn-step">
                 {{#if step.text}}<p role="{{step.role}}">{{step.text}}</p>{{/if}}
                 {{#if step.detail}}<p>{{step.detail}}</p>{{/if}}
                 {{#if step.field}}
@@ -64,11 +64,19 @@
         {{/each}}
       </div>
     </section>
-    <details class="jdr-ninja__advanced" data-sync="advanced">
-      <summary><i class="fa-solid fa-sliders" aria-hidden="true"></i>{{localize "JDRNINJA.variables.advanced"}}<i class="fa-solid fa-chevron-right jdr-ninja__chevron" aria-hidden="true"></i></summary>
-      <div class="jdr-ninja__advanced-body">
+    <details class="jn-advanced" data-sync="advanced">
+      <summary><i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i>{{localize "JDRNINJA.panel.advanced"}}<i class="fa-solid fa-chevron-right jn-chevron" aria-hidden="true"></i></summary>
+      <div class="jn-advanced-body">
+        {{!-- The one site address: pairing and both token saves read it, and it is only ever saved together with a token. --}}
+        <div class="form-group">
+          <label for="jdr-ninja-account-origin">{{localize "JDRNINJA.field.server"}}</label>
+          <div class="form-fields">
+            <input id="jdr-ninja-account-origin" name="accountOrigin" type="url" value="{{account.origin}}" aria-describedby="jdr-ninja-account-origin-hint" {{#if busy}}disabled{{/if}}>
+          </div>
+          <p class="hint" id="jdr-ninja-account-origin-hint">{{localize "JDRNINJA.field.serverHint"}}</p>
+        </div>
         <div class="jn-section">
-          <h3 class="jn-section__title"><i class="fa-solid fa-user" aria-hidden="true"></i>{{localize "JDRNINJA.panel.account"}}</h3>
+          <h3 class="jn-section__title"><i class="fa-solid fa-user-ninja" aria-hidden="true"></i>{{localize "JDRNINJA.panel.account"}}</h3>
           <div class="form-group">
             <label for="jdr-ninja-device-name">{{localize "JDRNINJA.account.deviceName"}}</label>
             <div class="form-fields">
@@ -83,27 +91,14 @@
             </div>
             <p class="hint" id="jdr-ninja-account-token-hint">{{localize "JDRNINJA.account.manualHint"}}</p>
           </div>
-          <div class="form-group">
-            <label for="jdr-ninja-account-origin">{{localize "JDRNINJA.field.server"}}</label>
-            <div class="form-fields">
-              <input id="jdr-ninja-account-origin" name="accountOrigin" type="url" value="{{account.origin}}" aria-describedby="jdr-ninja-account-origin-hint" {{#if busy}}disabled{{/if}}>
-            </div>
-            <p class="hint" id="jdr-ninja-account-origin-hint">{{localize "JDRNINJA.field.serverHint"}}</p>
-          </div>
           <div class="jn-toolbar">
             <button type="button" data-action="manageAccount" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> {{localize "JDRNINJA.account.manage"}}</button>
           </div>
         </div>
         {{#if isGM}}
           <div class="jn-section">
-            <h3 class="jn-section__title"><i class="fa-solid fa-globe" aria-hidden="true"></i>{{localize "JDRNINJA_ATLAS_SYNC.app.title"}}</h3>
-            <div class="form-group">
-              <label for="jdr-ninja-atlas-origin">{{localize "JDRNINJA.field.server"}}</label>
-              <div class="form-fields">
-                <input id="jdr-ninja-atlas-origin" name="atlasOrigin" type="url" value="{{atlas.origin}}" aria-describedby="jdr-ninja-atlas-origin-hint" {{#if busy}}disabled{{/if}}>
-              </div>
-              <p class="hint" id="jdr-ninja-atlas-origin-hint">{{localize "JDRNINJA.field.serverHint"}}</p>
-            </div>
+            <h3 class="jn-section__title"><i class="fa-solid fa-globe" aria-hidden="true"></i>{{localize "JDRNINJA.atlas.app.title"}}</h3>
+            {{#if atlas.originNote}}<p class="jn-muted" data-atlas-origin>{{atlas.originNote}}</p>{{/if}}
             {{#if atlas.tokenInAdvanced}}
               <div class="form-group">
                 <label for="jdr-ninja-atlas-token">{{localize "JDRNINJA.atlas.token"}}</label>
@@ -123,7 +118,7 @@
     </details>
   </div>
   {{#if busy}}
-    <footer class="form-footer jn-footer jdr-ninja__busy" role="status">
+    <footer class="form-footer jn-footer jn-busy" role="status">
       <span><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> {{localize "JDRNINJA.pairing.waiting"}}</span>
       <button type="button" data-action="cancel"><i class="fa-solid fa-ban" aria-hidden="true"></i> {{localize "JDRNINJA.button.cancel"}}</button>
     </footer>

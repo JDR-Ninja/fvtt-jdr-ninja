@@ -1,7 +1,6 @@
 export const MODULE_ID = "jdr-ninja";
 export const I18N = "JDRNINJA";
 export const DEFAULT_ORIGIN = "https://www.jdr.ninja";
-export const SUBSCRIPTIONS_URL = `${DEFAULT_ORIGIN}/abonnements`;
 export const SETTINGS = Object.freeze({
   accountOrigin: "accountOrigin",
   accountToken: "accountToken",

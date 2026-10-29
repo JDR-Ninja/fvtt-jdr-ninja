@@ -4,6 +4,7 @@ import { summarize } from "./description.js";
 import { defaultFolder, normalizeFolder } from "./translate.js";
 import { ARCHIVE_LIMITS, readMapArchive } from "./zip.js";
 import { importMap, missingFilePermission } from "./import.js";
+import { openSingleton, releaseSingleton } from "../ui/window.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 /** A localized string of this window; the second argument fills its `{placeholders}`. */
@@ -30,18 +31,15 @@ export function progressState(state, levels) {
 
 export class MapImportPanel extends HandlebarsApplicationMixin(ApplicationV2) {
   static instance = null;
-  /** One window: the Scenes directory button and the module API reuse it. */
+  /** One window, for a GM only: the Scenes directory button and the module API reuse it. */
   static open() {
     if (game.user?.isGM !== true) { ui.notifications.warn(MT("error.notGM")); return null; }
-    const panel = this.instance ??= new this();
-    if (!panel.rendered) panel.render({ force: true });
-    else { if (panel.minimized) void panel.maximize(); panel.bringToFront(); }
-    return panel;
+    return openSingleton(this);
   }
   static DEFAULT_OPTIONS = {
     id: "jdr-ninja-map-import", classes: ["jdr-ninja", "jdr-ninja-maps"], tag: "div",
     window: { title: `${I18N}.maps.title`, icon: "fa-solid fa-map", resizable: true },
-    position: { width: 560, height: 540 },
+    position: { width: 600, height: 540 },
     actions: {
       import: MapImportPanel.prototype._import,
       clear: MapImportPanel.prototype._clear,
@@ -146,7 +144,7 @@ export class MapImportPanel extends HandlebarsApplicationMixin(ApplicationV2) {
   _view() { return game.scenes?.get(this._result?.sceneId)?.view(); }
 
   async close(options) {
-    if (this.constructor.instance === this) this.constructor.instance = null;
+    releaseSingleton(this);
     return super.close(options);
   }
 }

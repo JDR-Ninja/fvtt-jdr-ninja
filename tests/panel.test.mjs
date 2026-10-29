@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import Handlebars from "handlebars";
 import { registerSettings } from "../scripts/settings.js";
+import { ENDPOINTS } from "../scripts/constants.js";
 import { creatureClient } from "../scripts/creatures/api.js";
 
 class Application {
@@ -56,13 +57,11 @@ test("settings keep account tokens client-scoped and Atlas tokens world-scoped, 
   let menu;
   const previous = game.settings;
   game.settings = { register: (_module, key, options) => settings.push({ key, ...options }),
-    registerMenu: (_module, _key, options) => { menu = options; } };
+    registerMenu: (_module, key, options) => { if (key === "connections") menu = options; } };
   try { registerSettings({ menus: { connections: ConnectionPanel } }); } finally { game.settings = previous; }
   assert.equal(settings.length, 20);
   for (const setting of settings) {
     assert.equal(setting.scope, setting.key === "variablesPersonal" ? "user" : setting.key === "variablesWorld" || setting.key.startsWith("atlas") ? "world" : "client");
-    assert.equal(setting.config, ["atlasEnabled", "overlayEnabled", "overlayForwardFilter",
-      "overlayCardHoldSeconds", "overlayTableCommandsEnabled", "streamDeckEnabled", "creaturesEnabled"].includes(setting.key));
   }
   const toggle = settings.find(setting => setting.key === "atlasEnabled");
   assert.equal(toggle.type, Boolean);
@@ -78,6 +77,38 @@ test("settings keep account tokens client-scoped and Atlas tokens world-scoped, 
   assert.equal(menu.type.panel, ConnectionPanel);
 });
 
+test("the settings tab lists only windows to open: Connections first, and no setting of the module is a native line", () => {
+  const settings = new Map(), menus = new Map();
+  const callbacks = { onAtlasChange() {}, onAccountChange() {}, onOverlaySwitch() {}, onOverlayPreference() {}, onStreamDeckChange() {}, onCreaturesChange() {} };
+  const previous = game.settings, previousGM = game.user.isGM;
+  game.settings = { register: (_module, key, options) => settings.set(key, options), registerMenu: (_module, key, options) => menus.set(key, options) };
+  try {
+    for (const isGM of [true, false]) {
+      game.user.isGM = isGM;
+      settings.clear(); menus.clear();
+      registerSettings({ menus: { connections: ConnectionPanel, monster: MonsterGeneratorPanel, npc: NpcGeneratorPanel,
+        variables: VariablePanel, macroArguments: MacroArgumentsPanel }, ...callbacks });
+      // V14 SettingsConfig#_prepareCategoryData lists the `config` settings of a module after all its menus.
+      assert.deepEqual([...settings].filter(([, setting]) => setting.config).map(([key]) => key), [], `GM ${isGM}`);
+      for (const [key, setting] of settings) {
+        assert.equal(setting.name, undefined, key);
+        assert.equal(setting.hint, undefined, key);
+      }
+      assert.equal(settings.size, 20);
+    }
+    // The saved values survive: keys, scopes, defaults, choices and callbacks are those of the native lines.
+    const field = key => settings.get(key);
+    assert.deepEqual([field("atlasEnabled").scope, field("atlasEnabled").default, field("atlasEnabled").onChange], ["world", false, callbacks.onAtlasChange]);
+    assert.deepEqual([field("creaturesEnabled").scope, field("creaturesEnabled").default, field("creaturesEnabled").onChange], ["client", false, callbacks.onCreaturesChange]);
+    assert.deepEqual([field("overlayEnabled").scope, field("overlayEnabled").default, field("overlayEnabled").onChange], ["client", false, callbacks.onOverlaySwitch]);
+    assert.deepEqual([field("overlayTableCommandsEnabled").default, field("overlayTableCommandsEnabled").onChange], [false, callbacks.onOverlaySwitch]);
+    assert.deepEqual([field("streamDeckEnabled").scope, field("streamDeckEnabled").default, field("streamDeckEnabled").onChange], ["client", false, callbacks.onStreamDeckChange]);
+    const filter = field("overlayForwardFilter"), hold = field("overlayCardHoldSeconds");
+    assert.deepEqual([filter.type, filter.default, Object.keys(filter.choices), filter.onChange], [String, "allPublic", ["allPublic", "playersOnly"], callbacks.onOverlayPreference]);
+    assert.deepEqual([hold.type, hold.default, Object.keys(hold.choices), hold.onChange], [String, "0", ["0", "1", "2", "3", "5"], callbacks.onOverlayPreference]);
+  } finally { game.settings = previous; game.user.isGM = previousGM; }
+});
+
 test("every settings menu registers a launcher that opens its window's singleton, never a second window", async () => {
   const menus = new Map();
   const previous = game.settings;
@@ -89,10 +120,40 @@ test("every settings menu registers a launcher that opens its window's singleton
       variables: VariablePanel, macroArguments: MacroArgumentsPanel } });
   } finally { game.settings = previous; }
   assert.deepEqual([...menus.keys()].sort(), Object.keys(windows).sort());
-  // Generator menus show the short label and their window's icon, with no premium marker.
+  // V14 lists the menus of a module in registration order, before its settings: Connections is the first line.
+  assert.deepEqual([...menus.keys()], ["connections", "monsterGenerator", "npcGenerator", "variables", "macroArguments"]);
+  assert.equal(menus.get("connections").name, "JDRNINJA.menu.name");
+  assert.equal(menus.get("connections").label, "JDRNINJA.menu.label");
+  assert.equal(menus.get("connections").icon, "fa-solid fa-link");
+  // Generator menus show the short label and their window's icon, with no premium marker, and each its own hint.
   for (const [key, kind] of [["monsterGenerator", "monster"], ["npcGenerator", "npc"]]) {
     assert.equal(menus.get(key).label, `JDRNINJA.creatures.${kind}Shortcut`);
+    assert.equal(menus.get(key).hint, `JDRNINJA.creatures.${kind}MenuHint`);
     assert.equal(menus.get(key).icon, windows[key].DEFAULT_OPTIONS.window.icon);
+  }
+  assert.equal(menus.get("monsterGenerator").icon, "fa-solid fa-dragon");
+  assert.equal(menus.get("npcGenerator").icon, "fa-solid fa-masks-theater");
+  // Variables and Macros: the line carries the window's name and introduction, the button names the action.
+  for (const [key, button, hint, icon] of [["variables", "variablesButton", "variables.hint", "fa-solid fa-sliders"],
+    ["macroArguments", "macroArgumentsButton", "variables.macroHint", "fa-solid fa-code"]]) {
+    const menu = menus.get(key);
+    assert.equal(menu.name, `JDRNINJA.variables.menu.${key}`);
+    assert.equal(menu.label, `JDRNINJA.variables.menu.${button}`);
+    assert.notEqual(menu.label, menu.name);
+    assert.equal(menu.hint, `JDRNINJA.${hint}`);
+    assert.equal(menu.icon, icon);
+  }
+  assert.notEqual(menus.get("variables").hint, menus.get("macroArguments").hint);
+  // Read aloud, in every language: the button does not repeat the name of its line, and each hint is its own sentence.
+  for (const locale of ["fr", "en", "es", "de", "it"]) {
+    const copy = JSON.parse(await readFile(new URL(`../lang/${locale}.json`, import.meta.url), "utf8"));
+    for (const key of ["variables", "macroArguments"]) {
+      assert(copy[`JDRNINJA.variables.menu.${key}Button`], `${locale} ${key}`);
+      assert.notEqual(copy[`JDRNINJA.variables.menu.${key}Button`], copy[`JDRNINJA.variables.menu.${key}`], `${locale} ${key}`);
+    }
+    for (const key of ["creatures.monsterMenuHint", "creatures.npcMenuHint"]) assert(copy[`JDRNINJA.${key}`], `${locale} ${key}`);
+    assert.notEqual(copy["JDRNINJA.creatures.monsterMenuHint"], copy["JDRNINJA.creatures.npcMenuHint"], locale);
+    assert.notEqual(copy["JDRNINJA.variables.hint"], copy["JDRNINJA.variables.macroHint"], locale);
   }
   for (const [key, Window] of Object.entries(windows)) {
     const menu = menus.get(key), opened = { window: key };
@@ -125,19 +186,9 @@ test("Connections has one window: reopening fronts it, the menu reuses it and cl
   await second.close();
 });
 
-test("players never see the GM-only creature and Twitch table switches in Configure Settings; GMs do", () => {
-  const settings = new Map();
-  const previous = game.settings, previousGM = game.user.isGM;
-  game.settings = { register: (_module, key, options) => settings.set(key, options), registerMenu() {} };
-  try {
-    registerSettings({ menus: { connections: ConnectionPanel } });
-    // V14 SettingsConfig#_prepareCategoryData lists `config` settings and hides only world-scope ones from players.
-    const listed = () => [...settings].filter(([, s]) => s.config && s.scope !== "world").map(([key]) => key);
-    game.user.isGM = true;
-    assert(listed().includes("creaturesEnabled")); assert(listed().includes("overlayTableCommandsEnabled"));
-    game.user.isGM = false;
-    assert.deepEqual(listed().sort(), ["overlayCardHoldSeconds", "overlayEnabled", "overlayForwardFilter", "streamDeckEnabled"]);
-  } finally { game.settings = previous; game.user.isGM = previousGM; }
+test("the Connections window is titled like its menu", () => {
+  assert.equal(ConnectionPanel.DEFAULT_OPTIONS.window.title, "JDRNINJA.menu.name");
+  assert.equal(ConnectionPanel.DEFAULT_OPTIONS.window.icon, "fa-solid fa-link");
 });
 
 test("render context never contains saved credentials or equates a stored token with verified authentication", async () => {
@@ -191,12 +242,18 @@ test("a subscription link appears only where a subscription is missing: no accou
         if (atlas) settle(panel, "atlas", atlas);
         const html = render(await panel._prepareContext());
         assert.deepEqual([...html.matchAll(/data-jdr-subscriptions="(\w+)"/g)].map(match => match[1]), links, JSON.stringify(values));
-        for (const link of html.matchAll(/<a href="([^"]+)"[^>]*data-jdr-subscriptions/g)) {
-          assert(link[0].startsWith('<a href="https://www.jdr.ninja/abonnements" target="_blank" rel="noopener noreferrer"'));
+        // The overlay has its own offers page; every other link opens the subscriptions of the site.
+        for (const link of html.matchAll(/<a href="([^"]+)"[^>]*data-jdr-subscriptions="(\w+)"/g)) {
+          const path = link[2] === "overlay" ? "/vtt-overlay/abonnement" : "/abonnements";
+          assert(link[0].startsWith(`<a href="https://www.jdr.ninja${path}" target="_blank" rel="noopener noreferrer"`), link[0]);
         }
         // Nothing carries a premium marker.
         assert(!html.includes("fa-gem")); assert(!html.includes("(Premium)"));
       }
+      // The links follow the saved site address, not the default one.
+      game.settings = fixtureSettings({ accountToken: "", accountOrigin: "http://localhost:3000" });
+      const local = render(await new ConnectionPanel()._prepareContext());
+      assert(local.includes('<a href="http://localhost:3000/abonnements" target="_blank" rel="noopener noreferrer" data-jdr-subscriptions="account">'));
     });
   } finally { creatureClient.access = savedAccess; game.settings = savedSettings; leaveWorld(); }
 });
@@ -264,6 +321,10 @@ test("the real template renders every locale, keeps creatures and Atlas from pla
       assert(html.includes("&lt;img src&#x3D;x") && html.includes("&lt;img src&#x3D;y"));
       assert(!html.includes("fixture-secret"));
       assert.equal(count(html, /name="atlasToken"/g), 1);
+      // One site address for the account and Atlas, and no field of its own for Atlas.
+      assert.equal(count(html, /name="accountOrigin"/g), 1);
+      assert.equal(count(html, /type="url"/g), 1);
+      assert(!html.includes('name="atlasOrigin"'));
       assert(html.includes('name="atlasEnabled" type="checkbox"'));
       assert(html.includes('data-compatibility="dndRequired"'));
       assert(html.includes(Handlebars.escapeExpression(copy["JDRNINJA.creatures.compatibility.dndRequired"])));
@@ -271,9 +332,10 @@ test("the real template renders every locale, keeps creatures and Atlas from pla
       assert(html.includes("ABCD-EFGH"));
       game.user.isGM = false;
       const player = render(await new ConnectionPanel()._prepareContext());
-      for (const hook of ['name="atlasToken"', 'name="atlasEnabled"', 'name="atlasOrigin"', 'name="creaturesEnabled"', 'data-action="pairCreatures"']) {
+      for (const hook of ['name="atlasToken"', 'name="atlasEnabled"', 'name="creaturesEnabled"', 'data-action="pairCreatures"', "data-atlas-origin"]) {
         assert(!player.includes(hook), `${locale}: ${hook}`);
       }
+      assert.equal(count(player, /name="accountOrigin"/g), 1, locale);
       // States are pills with an icon and their text, never badges; the blocks are a card, rows and sections, never fieldsets.
       assert(!html.includes("<fieldset") && !html.includes("<legend") && !html.includes('class="badge'));
       for (const action of [...html.matchAll(/data-action="(\w+)"/g), ...player.matchAll(/data-action="(\w+)"/g)]) {
@@ -392,7 +454,7 @@ test("the creatures row puts the system first, offers the device permission only
   for (const reason of ["unauthorized", "wrongDeviceKind"]) {
     assert.deepEqual(row(state({ result: { ok: false, reason } })), ["attention", "warning", "JDRNINJA.panel.state.attention", "JDRNINJA.panel.step.reconnectAccount", null, null], reason);
   }
-  assert.deepEqual(row(state({})), ["notChecked", "neutral", "JDRNINJA.creatures.status.notChecked", "", "checkCreatures", null]);
+  assert.deepEqual(row(state({})), ["notChecked", "neutral", "JDRNINJA.status.saved", "", "checkCreatures", null]);
   for (const reason of ["verificationUnavailable", "apiUnavailable", "network", "somethingNew"]) {
     const failed = state({ result: { ok: false, reason } });
     assert.deepEqual([...row(failed), failed.step.role, failed.step.action.label],
@@ -481,21 +543,21 @@ test("Connections shows each connection once: the account in its banner, then on
       game.user.isGM = true;
       const html = render(await new ConnectionPanel()._prepareContext());
       assert.equal(count(html, /class="jn-card /g), 1, language);
-      assert(html.includes('<section class="jn-card jdr-ninja__banner" role="group" aria-labelledby="jdr-ninja-account-name"'));
+      assert(html.includes('<section class="jn-card jn-banner" role="group" aria-labelledby="jdr-ninja-account-name"'));
       assert.deepEqual([...html.matchAll(/data-feature="([\w-]+)"/g)].map(match => match[1]), ["stream-deck", "overlay", "creatures", "atlas"]);
       for (const service of ["stream-deck", "overlay", "creatures", "atlas"]) {
         assert(html.includes(`<h4 id="jdr-ninja-service-${service}">`), service);
         assert(html.includes(`role="group" aria-labelledby="jdr-ninja-service-${service}"`), service);
       }
       // The duplicated account and Atlas sections, the intro and the shortcuts left the window.
-      assert(!html.includes("jdr-ninja__status") && !html.includes("jdr-ninja__services"));
+      assert(!html.includes("jn-status") && !html.includes("jn-services"));
       // Their copy was deleted from every locale: no key may render, and none may come back as an unused string.
       for (const key of ["panel.intro", "account.hint", "atlas.hint", "panel.enableBrowser", "panel.enableWorld", "creatures.permissionHint",
         "account.disconnect", "account.limited", "atlas.heading"]) {
         assert(!html.includes(`JDRNINJA.${key}`) && !(`JDRNINJA.${key}` in copy), key);
       }
-      // These stay for the native settings or the confirmations: their text is not shown in the window.
-      for (const key of ["overlay.enableHint", "creatures.enableHint", "atlas.enableHint", "account.disconnectHint", "atlas.disconnectHint"]) {
+      // These belong to the confirmations: their text is not shown in the window.
+      for (const key of ["account.disconnectHint", "atlas.disconnectHint"]) {
         assert(!html.includes(Handlebars.escapeExpression(copy[`JDRNINJA.${key}`])) && !html.includes(`JDRNINJA.${key}`), key);
       }
       for (const action of ["openVariables", "openMacroArguments", "openMonster", "openNpc"]) {
@@ -524,8 +586,16 @@ test("Connections shows each connection once: the account in its banner, then on
       assert.equal(count(html, new RegExp(`>${copy["JDRNINJA.panel.enable"]}</label>`, "g")), 4);
       // The windows of the features are icon buttons with their name for assistive technology and as a tooltip.
       for (const action of ["openStreamDeck", "openOverlay", "openAtlas"]) {
-        assert(new RegExp(`<button type="button" class="jn-icon-button jdr-ninja__open" data-action="${action}" aria-label="[^"]+" data-tooltip="[^"]+"`).test(html), action);
+        assert(new RegExp(`<button type="button" class="jn-icon-button jn-open" data-action="${action}" aria-label="[^"]+" data-tooltip="[^"]+"`).test(html), action);
       }
+      // « Configure » is a gear on the Stream Deck and overlay rows; the sliders mean only Variables.
+      for (const [action, icon] of [["openStreamDeck", "fa-gear"], ["openOverlay", "fa-gear"]]) {
+        assert(new RegExp(`data-action="${action}"[^>]*><i class="fa-solid ${icon}"`).test(html), action);
+      }
+      assert(!html.includes("fa-sliders"));
+      assert(html.includes('<summary><i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i>'));
+      assert(html.includes('<i class="fa-solid fa-user-ninja" aria-hidden="true"></i>', html.indexOf("<details")));
+      assert(!html.includes('<i class="fa-solid fa-user"'));
     });
   } finally { game.user.isGM = previousGM; game.settings = savedSettings; }
 });
@@ -590,7 +660,7 @@ test("one Atlas token field at most: in the row while no token is saved or the s
         assert.deepEqual(fields, place === "none" ? [] : [place], JSON.stringify([values, atlas]));
         assert.equal(count(html, /id="jdr-ninja-atlas-token"/g), fields.length);
         // The site address stays in the advanced options even when they are closed: saving and pairing read it.
-        assert(html.indexOf('name="atlasOrigin"') > advanced && html.indexOf('name="accountOrigin"') > advanced);
+        assert(html.indexOf('name="accountOrigin"') > advanced && !html.includes('name="atlasOrigin"'));
       }
     });
   } finally { game.settings = savedSettings; leaveWorld(); }
@@ -611,34 +681,45 @@ test("the Connections template keeps the hooks the code and the screenshot tool 
       const context = await panel._prepareContext();
       const html = render(context);
       // The account name is the banner's heading; the Atlas world is in its row's sentence, with the row's state.
-      assert(html.includes('<section class="jn-card jdr-ninja__banner" role="group" aria-labelledby="jdr-ninja-account-name" data-state="verified">'));
+      assert(html.includes('<section class="jn-card jn-banner" role="group" aria-labelledby="jdr-ninja-account-name" data-state="verified">'));
       assert(html.includes('<h3 id="jdr-ninja-account-name" data-connection-label="account">Demo account</h3>'));
-      assert(/<div class="jdr-ninja__feature" role="group" aria-labelledby="jdr-ninja-service-atlas" data-feature="atlas" data-state="connected">/.test(html));
+      assert(/<div class="jn-feature" role="group" aria-labelledby="jdr-ninja-service-atlas" data-feature="atlas" data-state="connected">/.test(html));
       assert(html.includes("JDRNINJA.panel.summary.atlasWorld Demo world"));
       assert.deepEqual(context.features.map(feature => feature.state), [context.features[0].state, "active", "available", "connected"]);
-      const advanced = html.indexOf('<details class="jdr-ninja__advanced" data-sync="advanced">');
+      const advanced = html.indexOf('<details class="jn-advanced" data-sync="advanced">');
       assert(advanced > 0 && !/<details[^>]*\bopen\b/.test(html), "Advanced options start closed and keep their state across renders");
       for (const hook of ['name="streamDeckEnabled"', 'name="overlayEnabled"', 'name="creaturesEnabled"', 'name="atlasEnabled"',
         'data-action="pair"', 'data-action="disconnectAccount"', 'data-action="openAtlas"']) {
         assert(html.indexOf(hook) > 0 && html.indexOf(hook) < advanced, hook);
       }
-      // The device name, the manual token, the site addresses, the token of a connected world and device management are advanced.
-      for (const hook of ['name="deviceName"', 'name="accountToken"', 'name="accountOrigin"', 'name="atlasOrigin"', 'name="atlasToken"',
+      // The site address, the device name, the manual token, the token of a connected world and device management are advanced.
+      for (const hook of ['name="deviceName"', 'name="accountToken"', 'name="accountOrigin"', 'name="atlasToken"',
         'data-action="saveAccount"', 'data-action="saveAtlas"', 'data-action="manageAccount"', 'data-action="manageAtlas"', 'data-action="disconnectAtlas"']) {
         assert(html.indexOf(hook) > advanced, hook);
       }
+      // One site address, at the head of the advanced options: before the Account and Atlas sections that read it.
+      assert.equal(count(html, /name="accountOrigin"/g), 1);
+      assert(!html.includes('name="atlasOrigin"'));
+      const origin = html.indexOf('name="accountOrigin"');
+      for (const marker of ['<h3 class="jn-section__title"', 'name="deviceName"', 'name="accountToken"', 'name="atlasToken"', 'data-action="saveAccount"', 'data-action="saveAtlas"']) {
+        assert(origin < html.indexOf(marker, advanced), marker);
+      }
+      const escaped = key => Handlebars.escapeExpression(copy[`JDRNINJA.${key}`]);
+      assert(html.includes(`<label for="jdr-ninja-account-origin">${escaped("field.server")}</label>`));
+      assert(html.includes(`id="jdr-ninja-account-origin-hint">${escaped("field.serverHint")}</p>`));
+      assert(html.includes(`<summary><i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i>${escaped("panel.advanced")}`));
       // Once everything is verified no check or authorization button is left.
       for (const action of ["checkAccount", "checkAtlas", "checkCreatures", "pairCreatures"]) assert(!html.includes(`data-action="${action}"`), action);
       assert(!html.includes("notice-error") && !html.includes('role="alert"'));
       // The wait is a footer with the one way out, only while an operation runs.
       assert(!html.includes('data-action="cancel"'));
-      assert(/<footer class="form-footer jn-footer jdr-ninja__busy" role="status">/.test(render({ ...context, busy: true })));
+      assert(/<footer class="form-footer jn-footer jn-busy" role="status">/.test(render({ ...context, busy: true })));
       assert(html.includes('class="standard-form jn-layout') && html.includes('<div class="jn-scroll">'));
       // A pairing that asks for the creature permission says so next to its code.
       const challenge = { userCode: "ABCD", verificationUrl: "https://www.jdr.ninja/vtt-overlay/lier" };
       const note = Handlebars.escapeExpression(copy["JDRNINJA.pairing.creatures"]);
       const pairing = render({ ...context, challenge, pairingCreatures: true });
-      assert(pairing.includes(note) && pairing.includes('<strong class="jdr-ninja__code">ABCD</strong>'));
+      assert(pairing.includes(note) && pairing.includes('<strong class="jn-pairing-code">ABCD</strong>'));
       assert(!render({ ...context, challenge }).includes(note));
     });
   } finally { game.settings = savedSettings; creatureClient.access = savedAccess; leaveWorld(); }
@@ -667,6 +748,114 @@ test("pairing asks for the creature permission only for a GM who enabled the cre
       assert.deepEqual(requests.slice(1), isGM ? [["dnd-creatures"]] : []);
     }
   } finally { game.settings = savedSettings; game.user.isGM = previousGM; }
+});
+
+/** A window whose fields hold these values, as `_field()` reads them from the rendered form. */
+const withFields = (panel, fields) => {
+  panel.element = { querySelector: selector => {
+    const name = /^\[name="(\w+)"\]$/.exec(selector)?.[1];
+    return name in fields ? { value: fields[name] } : null;
+  } };
+  return panel;
+};
+
+test("the one site address is read by the pairing and by both token saves", async () => {
+  keysAsText();
+  const savedSettings = game.settings;
+  try {
+    game.settings = fixtureSettings({});
+    const fields = { accountOrigin: "https://other.example", accountToken: "account-token", atlasToken: "atlas-token", deviceName: "My table" };
+    const panel = withFields(new ConnectionPanel(), fields);
+    const calls = [];
+    panel._connections.pairAccount = async options => { calls.push(["pair", options.origin, options.deviceName]); return { ok: false, reason: "denied" }; };
+    panel._connections.connect = async (kind, options) => { calls.push([kind, options.origin, options.token]); return { ok: false, reason: "denied" }; };
+    await panel._pair();
+    await panel._saveAccount();
+    await panel._saveAtlas();
+    // Atlas has no address of its own: it takes the one of the form, like the account.
+    assert.deepEqual(calls, [["pair", "https://other.example", "My table"], ["account", "https://other.example", "account-token"],
+      ["atlas", "https://other.example", "atlas-token"]]);
+    // There is no Atlas address field to read: a stray value under that name is ignored.
+    fields.atlasOrigin = "https://ignored.example";
+    calls.length = 0;
+    await panel._saveAtlas();
+    assert.deepEqual(calls, [["atlas", "https://other.example", "atlas-token"]]);
+  } finally { game.settings = savedSettings; }
+});
+
+test("an edited site address saves nothing without a newly pasted token, and is saved only with the token being connected", async () => {
+  keysAsText();
+  const savedSettings = game.settings, savedAccess = creatureClient.access, savedCheck = creatureClient.check;
+  creatureClient.check = () => new Promise(() => {});
+  try {
+    const values = { accountToken: "saved-account", atlasToken: "saved-atlas", accountOrigin: "https://www.jdr.ninja", atlasOrigin: "https://www.jdr.ninja" };
+    const writes = [], settings = fixtureSettings(values), set = settings.set;
+    settings.set = async (module, key, value) => { writes.push([key, value]); return set(module, key, value); };
+    game.settings = settings;
+    const requests = [];
+    const fields = { accountOrigin: "https://other.example", accountToken: "", atlasToken: "", deviceName: "My table" };
+    const panel = withFields(new ConnectionPanel(), fields);
+    panel._connections.request = async ({ origin, path, token }) => {
+      requests.push([origin, token]);
+      return path === ENDPOINTS.atlas ? { ok: true, data: { contractVersion: 1, status: "OK", world: { id: "world-1", name: "World" }, tier: { allowed: true } } }
+        : { ok: true, data: { ok: true, tokenKind: "foundry", account: "Demo", entitled: true } };
+    };
+    // The saved token never goes to the edited address: no request, no write, and the window says why.
+    await panel._saveAccount();
+    await panel._saveAtlas();
+    assert.deepEqual([writes, requests], [[], []]);
+    assert.deepEqual([panel._errors.account, panel._errors.atlas], ["JDRNINJA.error.originChanged", "JDRNINJA.error.originChanged"]);
+    assert.deepEqual([values.accountToken, values.accountOrigin, values.atlasToken, values.atlasOrigin],
+      ["saved-account", "https://www.jdr.ninja", "saved-atlas", "https://www.jdr.ninja"]);
+    // An unchanged address with no new token still re-saves the saved one: nothing travels to another site.
+    fields.accountOrigin = "https://www.jdr.ninja";
+    await panel._saveAccount();
+    assert.deepEqual(requests, [["https://www.jdr.ninja", "saved-account"]]);
+
+    // With a new token the address and the token are saved together, the old token cleared first.
+    writes.length = 0; requests.length = 0;
+    Object.assign(fields, { accountOrigin: "https://other.example", accountToken: "new-account-token", atlasToken: "new-atlas-token" });
+    await panel._saveAccount();
+    await panel._saveAtlas();
+    assert.deepEqual(writes, [["accountToken", ""], ["accountOrigin", "https://other.example"], ["accountToken", "new-account-token"],
+      ["atlasToken", ""], ["atlasOrigin", "https://other.example"], ["atlasToken", "new-atlas-token"]]);
+    assert.deepEqual(requests, [["https://other.example", "new-account-token"], ["https://other.example", "new-atlas-token"]]);
+    assert.deepEqual([values.accountOrigin, values.atlasOrigin], ["https://other.example", "https://other.example"]);
+  } finally { game.settings = savedSettings; creatureClient.access = savedAccess; creatureClient.check = savedCheck; }
+});
+
+test("Atlas names its own address only while a saved Atlas token uses another one than the site address", async () => {
+  keysAsText();
+  const savedSettings = game.settings, previousGM = game.user.isGM;
+  compatibleWorld();
+  try {
+    await withTemplate("en", async render => {
+      game.i18n = { localize: key => key, format: (key, values) => `${key} ${values.origin}` };
+      const local = "http://localhost:3000", site = "https://www.jdr.ninja";
+      for (const [values, isGM, shown] of [
+        [{}, true, null],
+        [{ atlasOrigin: local }, true, local],
+        [{ accountOrigin: local }, true, site],
+        [{ accountOrigin: local, atlasOrigin: local }, true, null],
+        [{ atlasOrigin: local, atlasToken: "" }, true, null],
+        [{ atlasOrigin: local }, false, null],
+      ]) {
+        game.settings = fixtureSettings(values);
+        game.user.isGM = isGM;
+        const context = await new ConnectionPanel()._prepareContext();
+        const html = render(context), note = html.indexOf("data-atlas-origin");
+        const label = JSON.stringify([values, isGM]);
+        assert.equal(context.atlas.originNote, shown ? `JDRNINJA.atlas.originDiffers ${shown}` : "", label);
+        if (!shown) { assert.equal(note, -1, label); continue; }
+        // One discreet line in the Atlas section of the advanced options, after the site address that applies to both.
+        assert(html.includes(`<p class="jn-muted" data-atlas-origin>JDRNINJA.atlas.originDiffers ${shown}</p>`), label);
+        assert.equal(count(html, /data-atlas-origin/g), 1, label);
+        assert(note > html.indexOf('name="accountOrigin"') && html.indexOf('name="accountOrigin"') > html.indexOf("<details"), label);
+        // The field itself shows the saved account address, never the Atlas one.
+        assert(html.includes(`name="accountOrigin" type="url" value="${values.accountOrigin ?? site}"`), label);
+      }
+    });
+  } finally { game.settings = savedSettings; game.user.isGM = previousGM; keysAsText(); leaveWorld(); }
 });
 
 test("automatic checks run once per opening in the background, and never without a saved token or a known creature access", async () => {
@@ -774,6 +963,42 @@ test("closing aborts the automatic checks, an explicit operation replaces its ow
   } finally { game.settings = savedSettings; creatureClient.access = savedAccess; creatureClient.check = savedCheck; leaveWorld(); }
 });
 
+test("a check that ends before the first render completes is drawn once by that render, and never after the window closes", async () => {
+  keysAsText();
+  const savedSettings = game.settings, savedAccess = creatureClient.access, savedCheck = creatureClient.check;
+  creatureClient.access = { allowed: true, entitled: true };
+  const panels = [];
+  try {
+    game.settings = fixtureSettings({ atlasEnabled: false, creaturesEnabled: false });
+    const open = async () => {
+      const panel = new ConnectionPanel(); panels.push(panel);
+      panel._connections.check = async () => ({ ok: false, reason: "network" });
+      // The window is not rendered yet: the first render is still preparing its context when the check fails.
+      await panel._prepareContext({ isFirstRender: true }); await flush();
+      assert.equal(panel.rendered, false); assert.equal(panel.renders.length, 0, "nothing can be redrawn before the window is rendered");
+      assert.equal(panel._drawOnRender, true);
+      panel.element = { querySelector: () => null };
+      return panel;
+    };
+    const panel = await open();
+    panel.rendered = true; panel._onRender({}, { isFirstRender: true }); await flush();
+    assert.equal(panel.renders.length, 1); assert.equal(panel.renders[0].account.state, "retry");
+    panel._onRender({}, {}); await flush();
+    assert.equal(panel.renders.length, 1, "a later render does not draw it again");
+
+    // Closed before the first render completes, or between that render and the redraw: nothing is drawn.
+    const closed = await open();
+    await closed.close(); await flush();
+    assert.equal(closed._drawOnRender, false); assert.equal(closed.renders.length, 0);
+    const leaving = await open();
+    leaving.rendered = true; leaving._onRender({}, { isFirstRender: true }); leaving.rendered = false; await flush();
+    assert.equal(leaving.renders.length, 0);
+  } finally {
+    for (const panel of panels) await panel.close();
+    game.settings = savedSettings; creatureClient.access = savedAccess; creatureClient.check = savedCheck;
+  }
+});
+
 test("creature access is checked when its switch turns on and after a pairing succeeds, only while it is unknown", async () => {
   keysAsText();
   const savedSettings = game.settings, savedAccess = creatureClient.access, savedCheck = creatureClient.check;
@@ -848,8 +1073,8 @@ test("each disconnection asks first: cancelling or closing keeps the token, conf
 test("a redraw keeps what is being typed, while an explicit operation starts from the saved state", () => {
   const panel = new ConnectionPanel();
   const field = (name, value, defaultValue = value) => ({ name, value, defaultValue });
-  const rendered = () => [field("atlasToken", ""), field("deviceName", "Test world / GM"), field("atlasOrigin", "https://new.example")];
-  const content = { fields: [field("atlasToken", "typed", ""), field("deviceName", "My table", "Test world / GM"), field("atlasOrigin", "https://www.jdr.ninja")],
+  const rendered = () => [field("atlasToken", ""), field("deviceName", "Test world / GM"), field("accountOrigin", "https://new.example")];
+  const content = { fields: [field("atlasToken", "typed", ""), field("deviceName", "My table", "Test world / GM"), field("accountOrigin", "https://www.jdr.ninja")],
     querySelectorAll: () => content.fields, querySelector: selector => content.fields.find(input => selector === `input[name="${input.name}"]`) };
   panel._replaceHTML(rendered(), content, {});
   // An untouched field shows the newly saved value.
@@ -857,4 +1082,9 @@ test("a redraw keeps what is being typed, while an explicit operation starts fro
   content.fields[0].value = "typed again";
   panel._replaceHTML(rendered(), content, { resetFields: true });
   assert.deepEqual(content.fields.map(input => input.value), ["", "Test world / GM", "https://new.example"]);
+  // The one site address, typed and not yet saved, survives a redraw such as a finished background check.
+  const address = [field("accountOrigin", "http://localhost:3000", "https://www.jdr.ninja")];
+  const typed = { fields: address, querySelectorAll: () => typed.fields, querySelector: selector => typed.fields.find(input => selector === `input[name="${input.name}"]`) };
+  panel._replaceHTML([field("accountOrigin", "https://www.jdr.ninja")], typed, {});
+  assert.equal(typed.fields[0].value, "http://localhost:3000");
 });
