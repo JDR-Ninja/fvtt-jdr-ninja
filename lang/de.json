@@ -159,7 +159,7 @@
   "JDRNINJA.overlay.tablesTitle": "Tabellenwürfe über Twitch",
   "JDRNINJA.overlay.tablesEnable": "Tabellenwürfe in diesem Browser erlauben",
   "JDRNINJA.overlay.tableCommandsHint": "Auf JDR Ninja konfigurierte Twitch-Befehle können aus Foundry-Tabellen ziehen. Jede Ziehung erstellt eine Nachricht im Weltchat. Diese Option ist standardmäßig deaktiviert und erfordert eine Spielleitung mit aktiviertem VTT Overlay in diesem Browser.",
-  "JDRNINJA.overlay.tablesHint": "Kopieren Sie die Foundry-UUID der Tabelle auf JDR Ninja. Alle Würfel ihrer Formel müssen W4, W6, W8, W10, W12 oder W20 sein.",
+  "JDRNINJA.overlay.tablesHint": "Kopieren Sie die Foundry-UUID der Tabelle auf JDR Ninja. Alle Würfel ihrer Formel müssen W4, W6, W8, W10, W12, W20 oder W100 sein.",
   "JDRNINJA.overlay.manageCommands": "Befehle auf JDR Ninja verwalten",
   "JDRNINJA.overlay.diagnostics": "Diagnose",
   "JDRNINJA.overlay.check": "Overlay prüfen",

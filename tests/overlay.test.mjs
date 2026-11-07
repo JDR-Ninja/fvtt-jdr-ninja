@@ -454,18 +454,20 @@ test("the poll loop draws eligible world and compendium tables once in V14 publi
     { kind: "drawTable", uuid: "RollTable.world" }, { kind: "unknown", uuid: "RollTable.skip" },
     { kind: "drawTable", uuid: "Compendium.scope.pack.RollTable.entry" },
   ] } });
-  relay.resolveUuid = async uuid => ({ documentName: "RollTable", formula: "1d20", draw: async options => draws.push({ uuid, options }) });
+  relay.resolveUuid = async uuid => ({ documentName: "RollTable", formula: uuid.startsWith("Compendium") ? "1d100" : "1d20",
+    draw: async options => draws.push({ uuid, options }) });
   await relay.pollOnce();
   assert.equal(draws.length, 2);
   assert.deepEqual(draws[0].options, { messageMode: "public" });
   assert.equal(requests.length, 0); // Draws post through chat; there is no separate roll-ingest call here.
 });
 
-test("table formulas refuse percentile, Fate, explicit faces, missing dice and mixed unsupported terms", () => {
-  for (const formula of ["1d100", "1d7", "1d6 + 1dF", "1d%", "1d{1,3,5}", "1d20 + d(@level)", "12", "@abilities.dex.mod"]) {
+test("table formulas accept d4 to d20 and d100, and refuse other faces, d%, Fate, explicit faces, missing dice and mixed unsupported terms", () => {
+  for (const formula of ["1d7", "1d13", "1d17", "1d1000", "1d100 + 1d7", "1d6 + 1dF", "1d%", "1d{1,3,5}",
+    "1d20 + d(@level)", "12", "@abilities.dex.mod"]) {
     assert.equal(tableFormulaIsMeshBacked(formula), false, formula);
   }
-  for (const formula of ["1d20", "4d6d1", "1d6 + 2d8", "1d12 + @abilities.dex.mod"]) {
+  for (const formula of ["1d20", "4d6d1", "1d6 + 2d8", "1d12 + @abilities.dex.mod", "1d100", "d100", "2d100kh1", "1d100 + 1d10"]) {
     assert.equal(tableFormulaIsMeshBacked(formula), true, formula);
   }
 });
@@ -473,7 +475,7 @@ test("table formulas refuse percentile, Fate, explicit faces, missing dice and m
 test("a non-table or ineligible formula cannot draw; disabling during UUID resolution cancels the draw", async () => {
   settings.set("overlayTableCommandsEnabled", true);
   let draws = 0;
-  for (const table of [null, { documentName: "Actor", formula: "1d20" }, { documentName: "RollTable", formula: "1d100" }]) {
+  for (const table of [null, { documentName: "Actor", formula: "1d20" }, { documentName: "RollTable", formula: "1d7" }]) {
     relay.resolveUuid = async () => table ? { ...table, draw: async () => draws++ } : null;
     await relay.handleDrawCommand("RollTable.invalid");
   }

@@ -159,7 +159,7 @@
   "JDRNINJA.overlay.tablesTitle": "Estrazioni dalle tabelle via Twitch",
   "JDRNINJA.overlay.tablesEnable": "Consentire le estrazioni in questo browser",
   "JDRNINJA.overlay.tableCommandsHint": "I comandi Twitch configurati su JDR Ninja possono estrarre risultati dalle tabelle Foundry. Ogni estrazione crea un messaggio nella chat del mondo. Questa opzione è disattivata per impostazione predefinita e richiede un master con VTT Overlay attivo in questo browser.",
-  "JDRNINJA.overlay.tablesHint": "Copiate l'UUID Foundry della tabella su JDR Ninja. Tutti i dadi della formula devono essere d4, d6, d8, d10, d12 o d20.",
+  "JDRNINJA.overlay.tablesHint": "Copiate l'UUID Foundry della tabella su JDR Ninja. Tutti i dadi della formula devono essere d4, d6, d8, d10, d12, d20 o d100.",
   "JDRNINJA.overlay.manageCommands": "Gestire i comandi su JDR Ninja",
   "JDRNINJA.overlay.diagnostics": "Diagnostica",
   "JDRNINJA.overlay.check": "Verificare l'overlay",

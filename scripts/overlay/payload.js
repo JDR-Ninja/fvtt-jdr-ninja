@@ -2,7 +2,9 @@ import { I18N } from "../constants.js";
 
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const isHex = value => typeof value === "string" && HEX_RE.test(value.trim());
-const MESH_BACKED_FACES = [4, 6, 8, 10, 12, 20];
+// The overlay throws a d100 as a tens d10 and a units d10. Any other face count (Foundry's default
+// `1d{results}`, such as d7 or d13) stays refused: a stand-in die would show a roll nobody made.
+const MESH_BACKED_FACES = [4, 6, 8, 10, 12, 20, 100];
 const DIE_TERM_START_RE = /(?:^|[^a-z0-9.@_])\d*d/gi;
 const FACE_SPEC_RE = /^(\d+|f|%|\{[^}]*\})/i;
 

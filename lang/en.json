@@ -159,7 +159,7 @@
   "JDRNINJA.overlay.tablesTitle": "Twitch table draws",
   "JDRNINJA.overlay.tablesEnable": "Allow draws in this browser",
   "JDRNINJA.overlay.tableCommandsHint": "Twitch commands configured on JDR Ninja can draw from Foundry tables. Each draw creates a message in the world's chat. This option is off by default and requires a GM with VTT Overlay enabled in this browser.",
-  "JDRNINJA.overlay.tablesHint": "Copy the table's Foundry UUID and paste it on JDR Ninja. Every die in its formula must be a d4, d6, d8, d10, d12 or d20.",
+  "JDRNINJA.overlay.tablesHint": "Copy the table's Foundry UUID and paste it on JDR Ninja. Every die in its formula must be a d4, d6, d8, d10, d12, d20 or d100.",
   "JDRNINJA.overlay.manageCommands": "Manage commands on JDR Ninja",
   "JDRNINJA.overlay.diagnostics": "Diagnostics",
   "JDRNINJA.overlay.check": "Check overlay",

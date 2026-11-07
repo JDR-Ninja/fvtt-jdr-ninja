@@ -159,7 +159,7 @@
   "JDRNINJA.overlay.tablesTitle": "Tiradas de tablas desde Twitch",
   "JDRNINJA.overlay.tablesEnable": "Permitir las tiradas en este navegador",
   "JDRNINJA.overlay.tableCommandsHint": "Los comandos de Twitch configurados en JDR Ninja pueden generar tiradas de tablas Foundry. Cada tirada crea un mensaje en el chat del mundo. Esta opción está desactivada por defecto y requiere un director de juego con VTT Overlay activo en este navegador.",
-  "JDRNINJA.overlay.tablesHint": "Copie el UUID Foundry de la tabla y péguelo en JDR Ninja. Todos los dados de su fórmula deben ser d4, d6, d8, d10, d12 o d20.",
+  "JDRNINJA.overlay.tablesHint": "Copie el UUID Foundry de la tabla y péguelo en JDR Ninja. Todos los dados de su fórmula deben ser d4, d6, d8, d10, d12, d20 o d100.",
   "JDRNINJA.overlay.manageCommands": "Gestionar comandos en JDR Ninja",
   "JDRNINJA.overlay.diagnostics": "Diagnóstico",
   "JDRNINJA.overlay.check": "Comprobar el overlay",
