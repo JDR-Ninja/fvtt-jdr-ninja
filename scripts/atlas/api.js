@@ -1,4 +1,4 @@
-import { MODULE_ID, SETTINGS, DEFAULT_API_BASE_URL, STATUS } from "./constants.js";
+import { MODULE_ID, SETTINGS, DEFAULT_API_BASE_URL, STATUS, CONTRACT_VERSION } from "./constants.js";
 import { atlasAccess, invalidateAtlasWork } from "./availability.js";
 import { writeBody } from "./converter.js";
 import { requestJson } from "../auth/http.js";
@@ -60,5 +60,12 @@ export const AtlasApi = {
   },
   create(campaignId, payload) {
     return request(`/campaigns/${encodeURIComponent(campaignId)}/characters`, writeBody(payload));
+  },
+  /**
+   * Resolves linked Atlas character ids (at most LOOKUP_BATCH per call) to their name, campaign and page addresses.
+   * An id that is not a live character of the token's world is left out of `items`.
+   */
+  lookup(ids) {
+    return request("/characters/lookup", { contractVersion: CONTRACT_VERSION, ids });
   },
 };

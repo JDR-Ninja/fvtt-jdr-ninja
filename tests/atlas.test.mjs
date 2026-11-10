@@ -703,6 +703,142 @@ test("link picker follows pagination and escapes character names", async () => {
   assert.equal(getLink(pc).atlasCharacterId, "pc-200");
 });
 
+/** Answers whoami, campaigns and the lookup the way the site does; `lookup` returns the lookup's reply. */
+function serveWindow(lookup) {
+  const lookups = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    if (url.endsWith("/whoami")) return reply({ status: "OK", world: { name: "The Sunken Crown" }, tier: { allowed: true } });
+    if (url.endsWith("/campaigns")) return reply({ status: "OK", items: [{ id: "campaign", name: "Campaign", characterCount: 2 }] });
+    if (url.endsWith("/characters/lookup")) { lookups.push(JSON.parse(options.body)); return lookup(); }
+    return reply({ status: "OK", syncedAtUtc: "2026-10-03T12:00:00Z", portrait: "unchanged" });
+  };
+  return lookups;
+}
+
+test("each linked row names its Atlas character and campaign, links its two pages, and warns about copies and stray links", async () => {
+  actor("here");
+  const copied = actor("copied");
+  copied.flags["jdr-ninja"].atlasLink.atlasCharacterId = "atlas-here";
+  actor("elsewhere");
+  actor("gone");
+  const free = actor("free");
+  delete free.flags["jdr-ninja"].atlasLink;
+  const publicUrl = "https://www.jdr.ninja/atlas/campagne/althar/la-cour/personnage/aegis";
+  const workshopUrl = "https://www.jdr.ninja/atlas/atelier/monde/w/campagne/campaign/personnage/p";
+  const lookups = serveWindow(() => reply({ status: "OK", items: [
+    { id: "ATLAS-HERE", name: "Aegis", campaignId: "campaign", campaignName: "La Cour", publicUrl, workshopUrl },
+    { id: "atlas-elsewhere", name: "Brann", campaignId: "old", campaignName: "Old <campaign>", publicUrl: "javascript:alert(1)" },
+  ] }));
+  const app = new AtlasSyncApp();
+  app.rendered = true;
+  await app.loadData();
+  assert.deepEqual(lookups, [{ contractVersion: 1, ids: ["atlas-here", "atlas-elsewhere", "atlas-gone"] }], "one lookup, no duplicate id");
+  const context = await app._prepareContext();
+  const row = id => context.rows.find(candidate => candidate.actorId === id);
+  const texts = id => row(id).warnings.map(warning => warning.text);
+  assert.deepEqual(row("here").target, { id: "atlas-here", name: "Aegis", campaignId: "campaign", campaignName: "La Cour",
+    publicUrl, workshopUrl });
+  assert.equal(row("here").scope, "campaign");
+  assert.deepEqual(texts("here"), [copy["JDRNINJA.atlas.target.shared"].replace("{names}", "Character copied")]);
+  assert.deepEqual(texts("copied"), [copy["JDRNINJA.atlas.target.shared"].replace("{names}", "Character here")]);
+  assert.equal(row("elsewhere").scope, "other");
+  assert.equal(row("elsewhere").target.publicUrl, null, "only http(s) addresses become links");
+  assert.deepEqual(texts("elsewhere"), [copy["JDRNINJA.atlas.target.otherCampaign"].replace("{campaign}", "Old <campaign>")]);
+  assert.equal(row("gone").scope, "other");
+  assert.deepEqual(row("gone").warnings, [{ level: "error", text: copy["JDRNINJA.atlas.target.missing"] }]);
+  assert.deepEqual([row("free").scope, row("free").target, row("free").warnings], ["unlinked", null, []]);
+
+  const source = await readFile(new URL("../templates/atlas-sync.hbs", import.meta.url), "utf8");
+  const handlebars = Handlebars.create();
+  handlebars.registerHelper("localize", key => copy[key] ?? key);
+  const html = handlebars.compile(source)(context);
+  assert(html.includes(`href="${publicUrl}"`) && html.includes(`href="${workshopUrl}"`));
+  assert.equal([...html.matchAll(/target="_blank" rel="noopener noreferrer"/g)].length, 4,
+    "the two rows on Aegis each link its two pages, in a new tab; Brann's unsafe address gives none");
+  assert(!html.includes("javascript:"));
+  assert(html.includes("Old &lt;campaign&gt;") && !html.includes("Old <campaign>"));
+  assert(html.includes('class="notice notice-error"'), "a gone character is an error");
+  for (const hook of ['data-control="search"', 'data-control="scope"']) assert(html.includes(hook), hook);
+  assert(!html.includes('data-control="folder"'), "no folder on any actor: no folder filter");
+});
+
+test("a site without the lookup leaves the rows as they were: no Atlas line, no warning, no error", async () => {
+  actor("here");
+  serveWindow(() => new Response("Not found", { status: 404 }));
+  const app = new AtlasSyncApp();
+  app.rendered = true;
+  await app.loadData();
+  assert.equal(app._data.error, null);
+  const [row] = (await app._prepareContext()).rows;
+  assert.deepEqual([row.target, row.warnings, row.scope], [null, [], "campaign"]);
+});
+
+test("« Sync all » syncs only the linked characters the filters show, and its label and count follow the filters", async () => {
+  actor("alpha");
+  actor("beta");
+  const free = actor("gamma");
+  delete free.flags["jdr-ninja"].atlasLink;
+  const players = { id: "players", name: "Players", ancestors: [] };
+  actors.get("beta").folder = players;
+  const app = new AtlasSyncApp();
+  app.rendered = true;
+  const all = await app._prepareContext();
+  assert.deepEqual([all.filtersActive, all.syncCount], [false, 2]);
+  assert.deepEqual(all.filters.folders.map(folder => [folder.id, folder.selected]),
+    [["all", true], ["players", false], ["none", false]]);
+
+  app._filters = { ...app._filters, query: "ALP" };
+  const narrowed = await app._prepareContext();
+  assert.deepEqual([narrowed.filtersActive, narrowed.syncCount], [true, 1]);
+  assert.deepEqual(narrowed.rows.filter(row => !row.hidden).map(row => row.actorId), ["alpha"]);
+  await app._onSyncAll();
+  assert.deepEqual(requests.map(request => new URL(request.url).pathname), ["/api/foundry/v1/atlas/characters/atlas-alpha"]);
+
+  requests.length = 0;
+  app._filters = { query: "", scope: "all", folder: "players" };
+  assert.equal((await app._prepareContext()).syncCount, 1);
+  app._filters = { query: "", scope: "unlinked", folder: "all" };
+  const unlinked = await app._prepareContext();
+  assert.deepEqual([unlinked.syncCount, unlinked.filteredEmpty], [0, false]);
+  await app._onSyncAll();
+  assert.equal(requests.length, 0);
+  assert(notices.includes(copy["JDRNINJA.atlas.notify.nothingLinked"]));
+  app._filters = { query: "nobody", scope: "all", folder: "all" };
+  assert.equal((await app._prepareContext()).filteredEmpty, true);
+});
+
+test("typing in the search hides rows in place and updates the footer, without redrawing the window", () => {
+  const app = new AtlasSyncApp();
+  const rows = [
+    { dataset: { actorId: "a", search: "aegis", scope: "campaign", folder: "none", linked: "true" }, hidden: false },
+    { dataset: { actorId: "b", search: "brann", scope: "other", folder: "none", linked: "true" }, hidden: false },
+    { dataset: { actorId: "c", search: "cyra", scope: "unlinked", folder: "none", linked: "false" }, hidden: false },
+  ];
+  const labels = [{ dataset: { syncLabel: "all" }, hidden: false }, { dataset: { syncLabel: "shown" }, hidden: true }];
+  const count = { textContent: "2" }, empty = { hidden: true };
+  app.element = {
+    querySelectorAll: selector => selector.startsWith(".jn-atlas-row") ? rows : selector === "[data-sync-label]" ? labels : [],
+    querySelector: selector => ({ "[data-sync-count]": count, "[data-filter-empty]": empty })[selector] ?? null,
+  };
+  let redraws = 0;
+  app.render = async () => { redraws++; };
+  app._filters = { ...app._filters, query: "AE" };
+  app._applyFilters();
+  assert.deepEqual(rows.map(row => row.hidden), [false, true, true]);
+  assert.deepEqual(labels.map(label => label.hidden), [true, false], "the footer now names the shown characters");
+  assert.deepEqual([count.textContent, empty.hidden], ["1", true]);
+  app._filters = { ...app._filters, query: "zzz" };
+  app._applyFilters();
+  assert.deepEqual([count.textContent, empty.hidden], ["0", false]);
+  app._filters = { query: "", scope: "all", folder: "all" };
+  app._applyFilters();
+  assert.deepEqual(rows.map(row => row.hidden), [false, false, false]);
+  assert.deepEqual(labels.map(label => label.hidden), [false, true]);
+  assert.equal(count.textContent, "2");
+  assert.equal(redraws, 0);
+});
+
 test("the Atlas template renders its actions and escapes actor data in all five languages", async () => {
   const source = await readFile(new URL("../templates/atlas-sync.hbs", import.meta.url), "utf8");
   for (const locale of ["fr", "en", "es", "de", "it"]) {

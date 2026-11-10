@@ -29,6 +29,21 @@
 .jdr-ninja-atlas .jn-atlas-row .notice { margin: 0; font-size: var(--font-size-12, 0.8rem); }
 .jdr-ninja-atlas .jn-atlas-row-actions { margin-inline-start: auto; }
 
+/* View filters: the search takes the free width, the two selects keep their content's width. A filtered-out row,
+   the empty-list message and the footer label that does not apply are hidden by attribute, above the card's flex. */
+.jdr-ninja-atlas [hidden] { display: none !important; }
+.jdr-ninja-atlas .jn-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; }
+.jdr-ninja-atlas .jn-atlas-filters > label.search { flex: 1 1 10rem; min-width: 0; display: flex; }
+.jdr-ninja-atlas .jn-atlas-filters > label.search > input { flex: 1; min-width: 0; }
+.jdr-ninja-atlas .jn-atlas-filters > select { flex: 0 1 auto; width: auto; max-width: 15rem; }
+
+/* The Atlas character a row is linked to: its name, its campaign and two small links (public page, workshop). */
+.jdr-ninja-atlas .jn-atlas-row-target { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.4rem; font-size: var(--font-size-12, 0.8rem); }
+.jdr-ninja-atlas .jn-atlas-target-name { font-weight: 600; }
+.jdr-ninja-atlas .jn-icon-link { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: var(--jn-radius); }
+.jdr-ninja-atlas .jn-icon-link:is(:hover, :focus-visible) { text-shadow: none; background: color-mix(in srgb, var(--color-text-primary) 12%, transparent); }
+
 /* VTT Overlay: a row is a label, its control and a narrow column for the information icon, so every control lines up. */
 .jdr-ninja-overlay .form-group { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(0, 2fr) 1.25rem; align-items: center; gap: 0.25rem 0.5rem; }
 .jdr-ninja-overlay .form-group > .hint { grid-column: 1 / -1; }

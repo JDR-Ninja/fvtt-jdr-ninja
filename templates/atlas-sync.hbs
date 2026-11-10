@@ -49,11 +49,34 @@
       {{/unless}}
     {{/if}}
 
+    {{#unless loading}}
+      <div class="jn-toolbar jn-atlas-filters">
+        <label class="search jn-atlas-search">
+          <span class="jn-sr-only">{{localize "JDRNINJA.atlas.filter.search"}}</span>
+          <input type="search" data-control="search" value="{{filters.query}}" placeholder="{{localize "JDRNINJA.atlas.filter.search"}}">
+        </label>
+        <select data-control="scope" aria-label="{{localize "JDRNINJA.atlas.filter.scope.label"}}">
+          {{#each filters.scopes}}
+            <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+          {{/each}}
+        </select>
+        {{#if filters.folders.length}}
+          <select data-control="folder" aria-label="{{localize "JDRNINJA.atlas.filter.folder"}}">
+            {{#each filters.folders}}
+              <option value="{{this.id}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+            {{/each}}
+          </select>
+        {{/if}}
+      </div>
+    {{/unless}}
+
     <div class="jn-scroll" aria-busy="{{#if loading}}true{{else}}false{{/if}}">
       {{#unless loading}}
         <ul class="jn-atlas-rows">
           {{#each rows}}
-            <li class="jn-card jn-atlas-row" data-actor-id="{{this.actorId}}">
+            <li class="jn-card jn-atlas-row" data-actor-id="{{this.actorId}}" data-search="{{this.search}}"
+                data-scope="{{this.scope}}" data-folder="{{this.folder}}" data-linked="{{#if this.linked}}true{{else}}false{{/if}}"
+                {{#if this.hidden}}hidden{{/if}}>
               <img class="jn-atlas-avatar" src="{{this.img}}" alt="" width="40" height="40">
               <div class="jn-atlas-row-main">
                 <span class="jn-atlas-row-name">{{this.name}}</span>
@@ -63,6 +86,31 @@
                   </span>
                   {{#if this.syncedLabel}}<span class="jn-muted">{{this.syncedLabel}}</span>{{/if}}
                 </div>
+                {{#if this.target}}
+                  <div class="jn-atlas-row-target">
+                    <span class="jn-sr-only">{{localize "JDRNINJA.atlas.target.linkedTo"}}</span>
+                    <i class="fa-solid fa-book-open" aria-hidden="true"></i>
+                    <span class="jn-atlas-target-name">{{this.target.name}}</span>
+                    <span class="jn-muted">· {{this.target.campaignName}}</span>
+                    {{#if this.target.publicUrl}}
+                      <a class="jn-icon-link" href="{{this.target.publicUrl}}" target="_blank" rel="noopener noreferrer"
+                         aria-label="{{localize "JDRNINJA.atlas.target.openPublic"}}" data-tooltip="{{localize "JDRNINJA.atlas.target.openPublic"}}">
+                        <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                      </a>
+                    {{/if}}
+                    {{#if this.target.workshopUrl}}
+                      <a class="jn-icon-link" href="{{this.target.workshopUrl}}" target="_blank" rel="noopener noreferrer"
+                         aria-label="{{localize "JDRNINJA.atlas.target.openWorkshop"}}" data-tooltip="{{localize "JDRNINJA.atlas.target.openWorkshop"}}">
+                        <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+                      </a>
+                    {{/if}}
+                  </div>
+                {{/if}}
+                {{#each this.warnings}}
+                  <p class="notice notice-{{this.level}}">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{this.text}}
+                  </p>
+                {{/each}}
                 {{#if this.error}}
                   <p class="notice notice-{{this.errorLevel}}">
                     <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{this.error}}
@@ -92,12 +140,16 @@
             </li>
           {{/each}}
         </ul>
+        <p class="jn-muted" data-filter-empty {{#unless filteredEmpty}}hidden{{/unless}}>{{localize "JDRNINJA.atlas.filter.empty"}}</p>
       {{/unless}}
     </div>
 
     <footer class="form-footer jn-footer">
       <button type="button" class="bright" data-action="syncAll" {{#unless canWrite}}disabled{{/unless}}>
-        <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i> {{localize "JDRNINJA.atlas.app.syncAll"}}
+        <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
+        <span data-sync-label="all" {{#if filtersActive}}hidden{{/if}}>{{localize "JDRNINJA.atlas.app.syncAll"}}</span>
+        <span data-sync-label="shown" {{#unless filtersActive}}hidden{{/unless}}>{{localize "JDRNINJA.atlas.app.syncShown"}}</span>
+        (<span data-sync-count>{{syncCount}}</span>)
       </button>
     </footer>
   {{/if}}

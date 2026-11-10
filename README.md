@@ -30,7 +30,10 @@ Foundry control does not require a JDR Ninja account.
 ## Atlas: keep your campaign's characters up to date
 
 Link Foundry actors to **Atlas** characters, create new ones, and sync sheets
-and portraits individually or together.
+and portraits individually or together. Filter the list by name, link state or
+folder to sync only part of it. Each linked actor shows its Atlas character and
+campaign, with links to its public page and to its Atlas workshop page, and a
+warning when the link points to another campaign or is shared by a duplicated actor.
 
 Supports **D&D5e, Pathfinder 2e, Starfinder 2e, The One Ring 2e, WFRP4e, Daggerheart,
 and Fallout: The Roleplaying Game** (including robot characters).

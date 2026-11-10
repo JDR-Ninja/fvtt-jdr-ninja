@@ -74,6 +74,9 @@ export const FLAG_LINK = "atlasLink";
 /** The `contractVersion` every push/create body carries. */
 export const CONTRACT_VERSION = 1;
 
+/** The most character ids one lookup request may carry; the window splits a longer list. */
+export const LOOKUP_BATCH = 200;
+
 /**
  * The Atlas API accepts push/create bodies up to 3 MiB. A larger body may be refused
  * without an Atlas JSON envelope.
